@@ -1,0 +1,74 @@
+`timescale 1ns / 1ps
+//////////////////////////////////////////////////////////////////////////////////
+// Company: 
+// Engineer: 
+// 
+// Create Date: 02/28/2025 10:07:24 PM
+// Design Name: 
+// Module Name: raw_signal_processing_max30100
+// Project Name: 
+// Target Devices: 
+// Tool Versions: 
+// Description: 
+// 
+// Dependencies: 
+// 
+// Revision:
+// Revision 0.01 - File Created
+// Additional Comments:
+// 
+//////////////////////////////////////////////////////////////////////////////////
+
+
+module raw_signal_processing_max30100 #(
+    parameter DATA_WIDTH = 16,
+    parameter THRESHOLD  = 1000  // Ngưỡng phát hiện đỉnh (có thể điều chỉnh)
+)(
+    input  wire                     clk,           // Clock hệ thống
+    input  wire                     reset,         // Reset đồng bộ, active high
+    input  wire                     new_sample,    // Có mẫu mới (ví dụ: từ FIFO hoặc ADC)
+    input  wire [DATA_WIDTH-1:0]    raw_data,      // Dữ liệu thô từ cảm biến MAX30100 (dạng số)
+    output reg  [DATA_WIDTH-1:0]    filtered_data, // Dữ liệu sau lọc (low-pass)
+    output reg                      peak_detected  // Pulse báo hiệu phát hiện đỉnh (1 clock cycle)
+);
+
+    // Bộ lọc IIR (Exponential Moving Average):
+    // filtered_data <= filtered_data + ((raw_data - filtered_data) >> 3);
+    always @(posedge clk or posedge reset) begin
+        if (reset)
+            filtered_data <= 0;
+        else if (new_sample)
+            filtered_data <= filtered_data + ((raw_data - filtered_data) >> 3);
+    end
+
+    // Phát hiện đỉnh:
+    // Sử dụng filtered_data để so sánh với mẫu trước đó (prev_sample).
+    // Khi tín hiệu tăng (đánh dấu rising) rồi giảm xuống dưới giá trị trước đó và mẫu trước vượt THRESHOLD,
+    // sinh ra pulse peak_detected.
+    reg [DATA_WIDTH-1:0] prev_sample;
+    reg rising;
+
+    always @(posedge clk or posedge reset) begin
+        if (reset) begin
+            prev_sample   <= 0;
+            rising        <= 0;
+            peak_detected <= 0;
+        end else if (new_sample) begin
+            if (filtered_data > prev_sample) begin
+                rising        <= 1;
+                peak_detected <= 0;
+            end else if (rising && (filtered_data < prev_sample) && (prev_sample > THRESHOLD)) begin
+                // Khi tín hiệu tăng rồi giảm và giá trị đỉnh vượt THRESHOLD, phát hiện đỉnh.
+                peak_detected <= 1;
+                rising        <= 0;
+            end else begin
+                peak_detected <= 0;
+                if (filtered_data <= prev_sample)
+                    rising <= 0;
+            end
+            prev_sample <= filtered_data;
+        end
+    end
+
+endmodule
+

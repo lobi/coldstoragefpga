@@ -1,0 +1,171 @@
+`timescale 1ns / 1ps
+//////////////////////////////////////////////////////////////////////////////////
+// Company: 
+// Engineer: 
+// 
+// Create Date: 03/03/2025 06:01:21 PM
+// Design Name: 
+// Module Name: top_max30100_system
+// Project Name: 
+// Target Devices: 
+// Tool Versions: 
+// Description: 
+// 
+// Dependencies: 
+// 
+// Revision:
+// Revision 0.01 - File Created
+// Additional Comments:
+// 
+//////////////////////////////////////////////////////////////////////////////////
+
+
+//`timescale 1ns / 1ps
+module top_max30100_system(
+    input         clk,        // Clock hệ thống (đã chia xuống 1MHz, ví dụ từ module clk_delay)
+    input         reset,      // Reset active high
+    // I²C bus cho cảm biến MAX30100
+    inout         sda_max,
+    output        scl_max,
+    // Các tín hiệu xuất của hệ thống
+    output [15:0] heart_rate, // Nhịp tim (BPM)
+    output [7:0]  spo2        // SpO₂ (%)
+);
+
+    //********************************************************************
+    // Signals kết nối giữa các module
+    //********************************************************************
+    // Tín hiệu từ i2c_master_max30100 (dữ liệu 16-bit đọc từ MAX30100)
+    wire [7:0] sensor_data_byte;
+    // Giả sử module i2c_master_max30100 trả về 8-bit; chúng ta sẽ kết hợp 2 byte để tạo 16-bit.
+    reg  [7:0] sensor_data_byte_reg;
+    reg  [15:0] sensor_raw_16;
+    reg         byte_received;  // Flag báo hiệu đã nhận được byte thứ 2
+
+    // Tín hiệu của FIFO
+    wire [15:0] fifo_data_out;
+    wire        fifo_empty;
+    wire        fifo_full;
+    reg         fifo_wr_en;
+    reg         fifo_rd_en;
+
+    // Tín hiệu từ raw_signal_processing_max30100
+    wire [15:0] filtered_data;
+    wire        peak_detected;
+    reg         new_sample;  // Kích hoạt module raw_signal_processing khi có dữ liệu mới từ FIFO
+
+    //********************************************************************
+    // Instantiation của module i2c_master_max30100
+    //********************************************************************
+    // Ta dùng module này để đọc dữ liệu từ MAX30100 (ở chế độ read, rw = 1).
+    // Ví dụ: đọc từ thanh ghi FIFO_DATA (địa chỉ 0x09)
+    reg sensor_start;
+    i2c_master_max30100 sensor_i2c (
+        .clk(clk),           // Clock 1MHz từ clk_delay
+        .reset(reset),
+        .start(sensor_start),
+        .rw(1'b1),           // Chế độ read
+        .slave_addr(7'h57),  // Địa chỉ của MAX30100
+        .reg_addr(8'h09),    // Giả sử đọc từ thanh ghi FIFO_DATA
+        .data_in(8'd0),      // Không sử dụng ở chế độ read
+        .data_out(sensor_data_byte), // 8-bit dữ liệu nhận được
+        .ready(),            // Có thể sử dụng nếu cần
+        .sda_max(sda_max),
+        .scl_max(scl_max)
+    );
+
+    //********************************************************************
+    // Instantiation của FIFO Buffer (16-bit)
+    //********************************************************************
+    fifo_buffer #(
+        .DATA_WIDTH(16),
+        .FIFO_DEPTH(256)
+    ) fifo_inst (
+        .clk(clk),
+        .reset(reset),
+        .wr_en(fifo_wr_en),
+        .rd_en(fifo_rd_en),
+        .data_in(sensor_raw_16),
+        .data_out(fifo_data_out),
+        .empty(fifo_empty),
+        .full(fifo_full)
+    );
+
+    //********************************************************************
+    // Instantiation của Raw Signal Processing (MAX30100)
+    //********************************************************************
+    raw_signal_processing_max30100 raw_proc (
+        .clk(clk),
+        .reset(reset),
+        .new_sample(new_sample),
+        .raw_data(fifo_data_out), // Dữ liệu từ FIFO
+        .filtered_data(filtered_data),
+        .peak_detected(peak_detected)
+    );
+
+    //********************************************************************
+    // Instantiation của Vital Sign Calculation (MAX30100)
+    //********************************************************************
+    // Ta dùng cùng một tín hiệu cho IR và Red (cho ví dụ này).
+    vital_sign_calculation_max30100 vital_calc (
+        .clk(clk),
+        .reset(reset),
+        .new_sample(new_sample),
+        .peak_detected(peak_detected),
+        .filtered_ir(filtered_data),
+        .filtered_red(filtered_data),  // Dùng cùng giá trị nếu chỉ có 1 kênh
+        .heart_rate(heart_rate),
+        .spo2(spo2)
+    );
+
+    //********************************************************************
+    // Logic Top-Level: Điều phối đọc dữ liệu từ cảm biến, lưu vào FIFO và xử lý.
+    //********************************************************************
+    // Một ví dụ đơn giản: liên tục kích hoạt sensor_i2c và kết hợp 2 byte để tạo thành 16-bit.
+    // Sau đó, khi dữ liệu mới đã được kết hợp, ghi vào FIFO.
+    // Đồng thời, nếu FIFO không rỗng, đọc dữ liệu và đưa vào raw_signal_processing.
+    // new_sample sẽ được set khi có dữ liệu mới từ FIFO.
+    // Lưu ý: Đây là ví dụ đơn giản, thực tế bạn cần một state machine phức tạp hơn để quản lý việc kết hợp 2 byte.
+    
+    always @(posedge clk or posedge reset) begin
+        if (reset) begin
+            sensor_start     <= 0;
+            fifo_wr_en       <= 0;
+            fifo_rd_en       <= 0;
+            new_sample       <= 0;
+            sensor_data_byte_reg <= 8'd0;
+            sensor_raw_16    <= 16'd0;
+            byte_received    <= 0;
+        end else begin
+            // Nếu module i2c_master sẵn sàng để đọc (giả sử nó chạy liên tục)
+            // Ta kích hoạt sensor_start để bắt đầu giao dịch.
+            sensor_start <= 1;
+            
+            // Giả sử mỗi giao dịch i2c_master trả về 1 byte, ta cần kết hợp 2 byte.
+            // Khi chưa nhận được byte thứ 2, lưu byte đầu tiên.
+            if (!byte_received) begin
+                sensor_data_byte_reg <= sensor_data_byte;
+                byte_received <= 1;
+            end else begin
+                // Kết hợp 2 byte: MSB là byte đã lưu, LSB là byte mới nhận.
+                sensor_raw_16 <= {sensor_data_byte_reg, sensor_data_byte};
+                byte_received <= 0;
+                // Khi có dữ liệu 16-bit mới, ghi vào FIFO nếu FIFO không đầy.
+                if (!fifo_full)
+                    fifo_wr_en <= 1;
+                else
+                    fifo_wr_en <= 0;
+                // Kích hoạt new_sample để báo hiệu có dữ liệu mới cho module raw_signal_processing.
+                new_sample <= 1;
+            end
+            
+            // Đọc từ FIFO nếu không rỗng, để cấp dữ liệu cho raw_signal_processing.
+            if (!fifo_empty)
+                fifo_rd_en <= 1;
+            else
+                fifo_rd_en <= 0;
+        end
+    end
+
+endmodule
+

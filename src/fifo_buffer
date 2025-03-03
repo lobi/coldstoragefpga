@@ -1,0 +1,74 @@
+`timescale 1ns / 1ps
+//////////////////////////////////////////////////////////////////////////////////
+// Company: 
+// Engineer: 
+// 
+// Create Date: 02/27/2025 05:09:54 PM
+// Design Name: 
+// Module Name: fifo_buffer
+// Project Name: 
+// Target Devices: 
+// Tool Versions: 
+// Description: 
+// 
+// Dependencies: 
+// 
+// Revision:
+// Revision 0.01 - File Created
+// Additional Comments:
+// 
+//////////////////////////////////////////////////////////////////////////////////
+
+
+module fifo_buffer #(
+    parameter DATA_WIDTH = 8,      // Chiều rộng dữ liệu (8-bit)
+    parameter FIFO_DEPTH = 256     // Số phần tử của FIFO
+)(
+    input  wire                    clk,      // Clock hệ thống
+    input  wire                    reset,    // Reset đồng bộ (active high)
+    input  wire                    wr_en,    // Cho phép ghi dữ liệu vào FIFO
+    input  wire                    rd_en,    // Cho phép đọc dữ liệu từ FIFO
+    input  wire [DATA_WIDTH-1:0]   data_in,  // Dữ liệu ghi vào FIFO
+    output reg  [DATA_WIDTH-1:0]   data_out, // Dữ liệu đọc từ FIFO
+    output reg                   empty,     // FIFO rỗng
+    output reg                   full       // FIFO đầy
+);
+
+    // Tính số bit cần thiết cho địa chỉ
+    localparam ADDR_WIDTH = $clog2(FIFO_DEPTH);
+
+    // Bộ nhớ lưu trữ của FIFO
+    reg [DATA_WIDTH-1:0] mem [0:FIFO_DEPTH-1];
+
+    // Con trỏ ghi và đọc với chiều rộng là ADDR_WIDTH+1 (để phân biệt wrap-around)
+    reg [ADDR_WIDTH:0] wr_ptr, rd_ptr; 
+
+    always @(posedge clk or posedge reset) begin
+        if (reset) begin
+            wr_ptr <= 0;
+            rd_ptr <= 0;
+            empty  <= 1;
+            full   <= 0;
+        end else begin
+            // Ghi dữ liệu khi wr_en được kích hoạt và FIFO không đầy
+            if (wr_en && !full) begin
+                mem[wr_ptr[ADDR_WIDTH-1:0]] <= data_in;
+                wr_ptr <= wr_ptr + 1;
+            end
+
+            // Đọc dữ liệu khi rd_en được kích hoạt và FIFO không rỗng
+            if (rd_en && !empty) begin
+                data_out <= mem[rd_ptr[ADDR_WIDTH-1:0]];
+                rd_ptr <= rd_ptr + 1;
+            end
+
+            // FIFO rỗng khi con trỏ ghi và con trỏ đọc bằng nhau
+            empty <= (wr_ptr == rd_ptr);
+
+            // FIFO đầy khi con trỏ ghi đã wrap-around và vị trí ghi bằng vị trí đọc
+            full <= (wr_ptr[ADDR_WIDTH] != rd_ptr[ADDR_WIDTH]) &&
+                    (wr_ptr[ADDR_WIDTH-1:0] == rd_ptr[ADDR_WIDTH-1:0]);
+        end
+    end
+
+endmodule

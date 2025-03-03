@@ -1,0 +1,97 @@
+module vital_sign_calculation_max30100 #(
+    parameter DATA_WIDTH     = 16,       // Độ rộng dữ liệu, ví dụ 16-bit
+    parameter COUNTER_WIDTH  = 32,       // Độ rộng của bộ đếm thời gian
+    parameter CLK_FREQ       = 400000    // Tần số clock (Hz) của miền xử lý, ví dụ 400 kHz
+)(
+    input  wire                      clk,           // Clock đồng bộ (chung với hệ thống)
+    input  wire                      reset,         // Reset đồng bộ, active high
+    input  wire                      new_sample,    // Có mẫu mới (từ FIFO hoặc ADC)
+    input  wire                      peak_detected, // Pulse báo hiệu phát hiện đỉnh từ kênh IR
+    input  wire [DATA_WIDTH-1:0]     filtered_ir,   // Tín hiệu IR đã qua xử lý
+    input  wire [DATA_WIDTH-1:0]     filtered_red,  // Tín hiệu Red đã qua xử lý
+    output reg  [15:0]               heart_rate,    // Nhịp tim (BPM)
+    output reg  [7:0]                spo2           // SpO₂ (%)
+);
+
+    //----- Phần Tính Nhịp Tim (HR) -----
+    // Bộ đếm free-running để đo khoảng thời gian giữa các đỉnh.
+    reg [COUNTER_WIDTH-1:0] free_counter;
+    reg [COUNTER_WIDTH-1:0] last_peak_time;
+    wire [COUNTER_WIDTH-1:0] interval;
+    assign interval = free_counter - last_peak_time;
+    
+    // Free-running counter đồng bộ.
+    always @(posedge clk or posedge reset) begin
+        if (reset)
+            free_counter <= 0;
+        else
+            free_counter <= free_counter + 1;
+    end
+    
+    // Khi phát hiện đỉnh, lưu lại thời gian hiện tại và tính HR.
+    always @(posedge clk or posedge reset) begin
+        if (reset) begin
+            last_peak_time <= 0;
+            heart_rate     <= 0;
+        end else if (peak_detected) begin
+            last_peak_time <= free_counter;
+            if (interval != 0)
+                // Công thức: HR = (60 * CLK_FREQ) / interval
+                heart_rate <= (60 * CLK_FREQ) / interval;
+        end
+    end
+
+    //----- Phần Tính SpO₂ -----
+    // Cập nhật giá trị max và min của tín hiệu IR và Red trong một window mẫu.
+    reg [DATA_WIDTH-1:0] ir_max, ir_min;
+    reg [DATA_WIDTH-1:0] red_max, red_min;
+
+    always @(posedge clk or posedge reset) begin
+        if (reset) begin
+            ir_max  <= 0;
+            ir_min  <= {DATA_WIDTH{1'b1}};  // Khởi tạo với giá trị cao nhất
+            red_max <= 0;
+            red_min <= {DATA_WIDTH{1'b1}};
+        end else if (new_sample) begin
+            // Cập nhật cho tín hiệu IR:
+            if (filtered_ir > ir_max)
+                ir_max <= filtered_ir;
+            if (filtered_ir < ir_min)
+                ir_min <= filtered_ir;
+            // Cập nhật cho tín hiệu Red:
+            if (filtered_red > red_max)
+                red_max <= filtered_red;
+            if (filtered_red < red_min)
+                red_min <= filtered_red;
+        end
+    end
+
+    // Khi có đỉnh, tính toán SpO₂ dựa trên AC (max - min) và DC (trung bình) của tín hiệu.
+    reg [31:0] numerator;
+    reg [31:0] denominator;
+    reg [31:0] ratio;
+    
+    always @(posedge clk or posedge reset) begin
+        if (reset) begin
+            spo2 <= 0;
+        end else if (peak_detected) begin
+            // Tính AC và DC:
+            // AC_ir = ir_max - ir_min; DC_ir = (ir_max + ir_min) >> 1
+            // AC_red = red_max - red_min; DC_red = (red_max + red_min) >> 1
+            numerator   = (red_max - red_min) * (((ir_max + ir_min) >> 1));
+            denominator = (ir_max - ir_min) * (((red_max + red_min) >> 1));
+            if (denominator != 0)
+                ratio = numerator / denominator;
+            else
+                ratio = 0;
+            // Ước tính SpO₂: SpO₂ = 110 - 25 * ratio
+            spo2 <= 110 - (25 * ratio[7:0]);  // Lấy 8 bit thấp của ratio để tính
+            // Reset giá trị max, min để bắt đầu window mẫu mới
+            ir_max  <= filtered_ir;
+            ir_min  <= filtered_ir;
+            red_max <= filtered_red;
+            red_min <= filtered_red;
+        end
+    end
+
+endmodule

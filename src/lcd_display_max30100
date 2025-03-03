@@ -1,0 +1,193 @@
+`timescale 1ns / 1ps
+//////////////////////////////////////////////////////////////////////////////////
+// Company: 
+// Engineer: 
+// 
+// Create Date: 03/02/2025 01:57:52 PM
+// Design Name: 
+// Module Name: lcd_display_max30100
+// Project Name: 
+// Target Devices: 
+// Tool Versions: 
+// Description: 
+// 
+// Dependencies: 
+// 
+// Revision:
+// Revision 0.01 - File Created
+// Additional Comments:
+// 
+//////////////////////////////////////////////////////////////////////////////////
+
+
+//`timescale 1ns / 1ps
+module lcd_display_max30100(
+    input         clk_1MHz,      // Clock 1MHz được lấy từ module clk_delay
+    input         rst_n,         // Reset active low
+    input  [15:0] heart_rate,    // Nhịp tim (BPM, giả sử <= 999)
+    input  [7:0]  spo2,          // SpO₂ (%)
+    output        sda_lcd,       // Bus SDA dành cho LCD
+    output        scl_lcd,       // Bus SCL dành cho LCD
+    output        done           // Flag báo hiệu frame hiển thị đã hoàn tất
+);
+
+    // Chuyển đổi số sang chuỗi ký tự (16 ký tự mỗi hàng)
+    reg [127:0] row1;
+    reg [127:0] row2;
+    
+    // Tạo các ký tự ASCII cho heart_rate và spo2
+    wire [7:0] hr_hundreds = 8'd48 + ((heart_rate / 100) % 10);
+    wire [7:0] hr_tens     = 8'd48 + ((heart_rate / 10) % 10);
+    wire [7:0] hr_units    = 8'd48 + (heart_rate % 10);
+    wire [7:0] spo2_tens   = 8'd48 + ((spo2 / 10) % 10);
+    wire [7:0] spo2_units  = 8'd48 + (spo2 % 10);
+    
+    // Format 16 ký tự cho mỗi hàng:
+    // Row1: "HR:" (3 ký tự) + 3 số heart_rate + 10 khoảng trắng
+    // Row2: "SpO2:" (5 ký tự) + 2 số spo2 + "%" + 8 khoảng trắng
+    always @(*) begin
+        row1 = { "HR:",
+                 hr_hundreds, hr_tens, hr_units,
+                 "            "}; // 10 spaces
+        row2 = { "SpO2:",
+                 spo2_tens, spo2_units,
+                 "%",
+                 "        "};      // 8 spaces
+    end
+
+    // FSM cho LCD hiển thị: gửi từng byte từ row1 và row2 theo thứ tự:
+    // 1. Gửi lệnh: đặt con trỏ dòng 1 (0x80)
+    // 2. Gửi 16 ký tự của row1
+    // 3. Gửi lệnh: đặt con trỏ dòng 2 (0xC0)
+    // 4. Gửi 16 ký tự của row2
+    localparam ST_INIT      = 0;
+    localparam ST_CMD1      = 1;
+    localparam ST_WRITE_ROW1= 2;
+    localparam ST_CMD2      = 3;
+    localparam ST_WRITE_ROW2= 4;
+    localparam ST_DONE      = 5;
+    
+    reg [2:0] state, next_state;
+    reg [5:0] ptr;  // Con trỏ từ 0 đến 15 cho mỗi dòng
+
+    reg send_en;       // Enable gửi cho lcd_write_cmd_data
+    reg [7:0] byte_to_send;  // Byte dữ liệu cần gửi
+
+    // Instance của module lcd_write_cmd_data
+    // Module này gửi 1 byte qua I²C và báo hiệu done khi xong.
+    wire write_done;
+    wire sda_en_wire;
+    lcd_write_cmd_data lcd_writer (
+        .clk_1MHz(clk_1MHz),
+        .rst_n(rst_n),
+        .data(byte_to_send),
+        .cmd_data( (state == ST_CMD1 || state == ST_CMD2) ? 1'b0 : 1'b1), // Command if sending CMD, Data otherwise
+        .ena(send_en),
+        .i2c_addr(7'h27),   // Địa chỉ PCF8574 (điều chỉnh nếu cần)
+        .sda_lcd(sda_lcd),
+        .scl_lcd(scl_lcd),
+        .done(write_done),
+        .sda_en(sda_en_wire)
+    );
+    
+    // FSM state register
+    always @(posedge clk_1MHz or negedge rst_n) begin
+        if (!rst_n) begin
+            state <= ST_INIT;
+            ptr   <= 0;
+        end else begin
+            state <= next_state;
+            if (state == ST_WRITE_ROW1 && write_done)
+                ptr <= ptr + 1;
+            else if (state == ST_WRITE_ROW2 && write_done)
+                ptr <= ptr + 1;
+            else if (state == ST_INIT)
+                ptr <= 0;
+        end
+    end
+
+    // Next state logic
+    always @(*) begin
+        case (state)
+            ST_INIT: begin
+                if (send_en) // When enable is asserted externally (or you can use a trigger)
+                    next_state = ST_CMD1;
+                else
+                    next_state = ST_INIT;
+            end
+            ST_CMD1: begin
+                if (write_done)
+                    next_state = ST_WRITE_ROW1;
+                else
+                    next_state = ST_CMD1;
+            end
+            ST_WRITE_ROW1: begin
+                if (ptr == 6'd16 && write_done)
+                    next_state = ST_CMD2;
+                else
+                    next_state = ST_WRITE_ROW1;
+            end
+            ST_CMD2: begin
+                if (write_done)
+                    next_state = ST_WRITE_ROW2;
+                else
+                    next_state = ST_CMD2;
+            end
+            ST_WRITE_ROW2: begin
+                if (ptr == 6'd16 && write_done)
+                    next_state = ST_DONE;
+                else
+                    next_state = ST_WRITE_ROW2;
+            end
+            ST_DONE: next_state = ST_INIT;
+            default: next_state = ST_INIT;
+        endcase
+    end
+
+    // Output logic: chọn byte cần gửi dựa trên state và ptr.
+    always @(*) begin
+        send_en = 1'b0;
+        case (state)
+            ST_INIT: begin
+                // Bạn có thể kích hoạt enable hiển thị ở đây hoặc từ bên ngoài.
+                send_en = 1'b1; // Để khởi động quá trình hiển thị
+                byte_to_send = 8'd0;
+            end
+            ST_CMD1: begin
+                // Gửi lệnh đặt DDRAM cho hàng 1: 0x80.
+                byte_to_send = 8'h80;
+                send_en = 1'b1;
+            end
+            ST_WRITE_ROW1: begin
+                // Gửi từng byte của row1.
+                // Giả sử row1[127:120] là ký tự đầu tiên, row1[119:112] là ký tự thứ 2,…
+                // Với ptr từ 0 đến 15.
+                byte_to_send = row1[127 - ptr*8 -: 8];
+                send_en = 1'b1;
+            end
+            ST_CMD2: begin
+                // Gửi lệnh đặt DDRAM cho hàng 2: 0xC0.
+                byte_to_send = 8'hC0;
+                send_en = 1'b1;
+            end
+            ST_WRITE_ROW2: begin
+                // Gửi từng byte của row2.
+                byte_to_send = row2[127 - ptr*8 -: 8];
+                send_en = 1'b1;
+            end
+            ST_DONE: begin
+                send_en = 1'b0;
+                byte_to_send = 8'd0;
+            end
+            default: begin
+                send_en = 1'b0;
+                byte_to_send = 8'd0;
+            end
+        endcase
+    end
+
+    // Done flag: khi FSM đạt ST_DONE, ta đánh dấu display update hoàn tất.
+    assign done = (state == ST_DONE);
+
+endmodule
+

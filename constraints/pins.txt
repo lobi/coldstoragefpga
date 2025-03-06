@@ -1,0 +1,13 @@
+set_property PACKAGE_PIN F8 [get_ports scl_lcd_0]
+set_property PACKAGE_PIN F7 [get_ports sda_lcd_0]
+set_property PACKAGE_PIN E6 [get_ports sda_max_0]
+set_property PACKAGE_PIN E5 [get_ports scl_max_0]
+set_property PACKAGE_PIN A8 [get_ports reset_0]
+
+set_property IOSTANDARD LVCMOS18 [get_ports reset_0]
+set_property IOSTANDARD LVCMOS18 [get_ports scl_lcd_0]
+set_property IOSTANDARD LVCMOS18 [get_ports scl_max_0]
+set_property IOSTANDARD LVCMOS18 [get_ports sda_lcd_0]
+set_property IOSTANDARD LVCMOS18 [get_ports sda_max_0]
+
+set_property CLOCK_DEDICATED_ROUTE FALSE [get_nets btn_p_t]

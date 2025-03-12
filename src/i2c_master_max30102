@@ -1,62 +1,53 @@
 `timescale 1ns / 1ps
-//////////////////////////////////////////////////////////////////////////////////
-// Module Name: i2c_master_max30100
-// Description: Giao tiếp I²C với cảm biến MAX30100, sử dụng bus riêng: sda_max/scl_max
-//////////////////////////////////////////////////////////////////////////////////
+
 module i2c_master_max30100 (
-    input  wire       clk,         // Clock I²C đã chia (từ i2c_clk_delay)
-    input  wire       reset,       // Reset active high
-    input  wire       start,       // Kích hoạt giao dịch I²C từ bên ngoài
-    input  wire       rw,          // Chế độ giao dịch: 0 - Write, 1 - Read (minh họa Write)
-    input  wire [6:0] slave_addr,  // Địa chỉ Slave (ví dụ: 7'h57 cho MAX30100)
-    input  wire [7:0] reg_addr,    // Địa chỉ thanh ghi trên MAX30100
-    input  wire [7:0] data_in,     // Dữ liệu ghi (Write)
-    output reg  [7:0] data_out,    // Dữ liệu nhận (Read)
-    output reg        ready,       // Báo hiệu giao dịch đã hoàn tất
-    inout  wire       sda_max,     // Bus SDA dành riêng cho MAX30100
-    output reg        scl_max      // Bus SCL dành riêng cho MAX30100
+    input  wire       clk,        // Clock hệ thống (100 MHz)
+    input  wire       reset,      // Reset active high
+    input  wire       start,      // Kích hoạt giao dịch I²C
+    input  wire       rw,         // 0 - Write, 1 - Read
+    input  wire [6:0] slave_addr, // Địa chỉ Slave (7-bit)
+    input  wire [7:0] reg_addr,   // Địa chỉ thanh ghi
+    input  wire [7:0] data_in,    // Dữ liệu ghi
+    output reg  [7:0] data_out,   // Dữ liệu đọc
+    output reg        ready,      // Hoàn tất giao dịch
+    inout  wire       sda_max,    // Bus SDA
+    output reg        scl_max     // Bus SCL
 );
 
+    // Clock I²C 100 kHz từ clk_divider
+    wire clk_i2c;
+    clk_divider #(100_000_000, 100_000) clk_div_inst (
+        .clk(clk),
+        .clk_1MHz(clk_i2c) // Thực tế đây là clk_i2c (100 kHz)
+    );
+
     // FSM State Definitions
-    localparam IDLE        = 4'd0;
-    localparam START_COND  = 4'd1;
-    localparam SEND_ADDR   = 4'd2;
-    localparam ACK1        = 4'd3;
-    localparam SEND_REG    = 4'd4;
-    localparam ACK2        = 4'd5;
-    localparam WRITE_DATA  = 4'd6;
-    localparam ACK3        = 4'd7;
-    localparam STOP_COND   = 4'd8;
+    typedef enum reg [3:0] {
+        IDLE, START_COND, SEND_ADDR, ACK1, SEND_REG, ACK2,
+        WRITE_DATA, ACK3, STOP_COND, READ_DATA, READ_ACK
+    } state_t;
 
-    reg [3:0] state;
+    state_t state;
     reg [3:0] bit_cnt;
-    reg [7:0] tx_byte;   // Byte cần gửi: địa chỉ, thanh ghi, hoặc dữ liệu
-
-    // Quản lý tín hiệu SDA: sử dụng sda_oe để drive, high-Z khi cần nhận ACK
-    reg sda_out;
-    reg sda_oe;
+    reg [7:0] tx_byte;
+    reg sda_out, sda_oe;
     assign sda_max = sda_oe ? (~sda_out ? 1'b0 : 1'bz) : 1'bz;
 
-    // Bộ đếm delay nội bộ
-    reg [15:0] delay_counter;
-    reg        delay_start;
-    localparam DELAY = 16'd5000;  // Delay 5000µs (ví dụ, điều chỉnh theo timing)
-    wire delay_done = (delay_counter == DELAY);
+    // Delay tối ưu cho I²C 100 kHz (~10µs mỗi tick)
+    reg [7:0] delay_counter;
+    wire delay_done = (delay_counter == 10); // 10 ticks ~ 100 µs
 
-    always @(posedge clk or posedge reset) begin
+    always @(posedge clk_i2c or posedge reset) begin
         if (reset)
-            delay_counter <= 16'd0;
-        else if (delay_start) begin
-            if (delay_counter < DELAY)
-                delay_counter <= delay_counter + 1;
-            else
-                delay_counter <= 0;
-        end else
+            delay_counter <= 0;
+        else if (!delay_done)
+            delay_counter <= delay_counter + 1;
+        else
             delay_counter <= 0;
     end
 
-    // FSM chính giao tiếp I²C
-    always @(posedge clk or posedge reset) begin
+    // FSM điều khiển I²C
+    always @(posedge clk_i2c or posedge reset) begin
         if (reset) begin
             state       <= IDLE;
             ready       <= 1;
@@ -66,7 +57,6 @@ module i2c_master_max30100 (
             bit_cnt     <= 0;
             tx_byte     <= 8'd0;
             data_out    <= 8'd0;
-            delay_start <= 0;
         end else begin
             case (state)
                 IDLE: begin
@@ -75,116 +65,96 @@ module i2c_master_max30100 (
                     sda_out <= 1;
                     sda_oe  <= 1;
                     if (start) begin
-                        ready       <= 0;
-                        delay_start <= 1; // Delay trước Start condition
-                        state       <= START_COND;
+                        ready   <= 0;
+                        state   <= START_COND;
                     end
                 end
 
                 START_COND: begin
                     if (delay_done) begin
-                        delay_start <= 0;
-                        // Tạo Start condition: SDA từ 1 xuống 0 khi SCL = 1
                         sda_out <= 0;
-                        sda_oe  <= 1;
-                        scl_max <= 1;
-                        // Chuẩn bị gửi địa chỉ Slave + R/W=0 (Write)
-                        tx_byte <= {slave_addr, 1'b0};
+                        state   <= SEND_ADDR;
+                        tx_byte <= {slave_addr, rw};
                         bit_cnt <= 7;
-                        delay_start <= 1;
-                        state <= SEND_ADDR;
                     end
                 end
 
                 SEND_ADDR: begin
                     if (delay_done) begin
-                        delay_start <= 0;
-                        scl_max <= 0;  // Hạ SCL để đặt bit dữ liệu
+                        scl_max <= 0;
                         sda_out <= tx_byte[bit_cnt];
                         if (bit_cnt == 0) begin
                             state <= ACK1;
-                            sda_oe <= 0;  // Thả sda để nhận ACK
+                            sda_oe <= 0;
                         end else begin
                             bit_cnt <= bit_cnt - 1;
                         end
-                        delay_start <= 1;
                     end
                 end
 
                 ACK1: begin
                     if (delay_done) begin
-                        delay_start <= 0;
-                        scl_max <= 1;  // Nâng SCL để nhận ACK
-                        // Giả sử ACK luôn thành công, chuyển sang gửi thanh ghi
-                        state <= SEND_REG;
-                        tx_byte <= reg_addr;
-                        bit_cnt <= 7;
-                        sda_oe <= 1; // Quay lại chế độ drive để gửi thanh ghi
-                        delay_start <= 1;
+                        scl_max <= 1;
+                        if (rw == 0) begin
+                            state   <= SEND_REG;
+                            tx_byte <= reg_addr;
+                            bit_cnt <= 7;
+                            sda_oe  <= 1;
+                        end else begin
+                            state <= READ_DATA;
+                            sda_oe <= 0;
+                        end
                     end
                 end
 
                 SEND_REG: begin
                     if (delay_done) begin
-                        delay_start <= 0;
                         scl_max <= 0;
                         sda_out <= tx_byte[bit_cnt];
                         if (bit_cnt == 0) begin
                             state <= ACK2;
-                            sda_oe <= 0;  // Thả sda để nhận ACK
+                            sda_oe <= 0;
                         end else begin
                             bit_cnt <= bit_cnt - 1;
                         end
-                        delay_start <= 1;
                     end
                 end
 
                 ACK2: begin
                     if (delay_done) begin
-                        delay_start <= 0;
-                        scl_max <= 1;  // Nâng SCL nhận ACK
-                        scl_max <= 0;  // Hạ SCL sau ACK
-                        sda_oe <= 1;
+                        scl_max <= 1;
                         if (rw == 0) begin
                             tx_byte <= data_in;
                             bit_cnt <= 7;
-                            state <= WRITE_DATA;
+                            state   <= WRITE_DATA;
                         end else begin
-                            state <= IDLE;  // Chưa triển khai chế độ đọc
+                            state <= IDLE;
                         end
-                        delay_start <= 1;
                     end
                 end
 
                 WRITE_DATA: begin
                     if (delay_done) begin
-                        delay_start <= 0;
                         scl_max <= 0;
                         sda_out <= tx_byte[bit_cnt];
                         if (bit_cnt == 0) begin
                             state <= ACK3;
-                            sda_oe <= 0;  // Thả sda để nhận ACK cuối cùng
+                            sda_oe <= 0;
                         end else begin
                             bit_cnt <= bit_cnt - 1;
                         end
-                        delay_start <= 1;
                     end
                 end
 
                 ACK3: begin
                     if (delay_done) begin
-                        delay_start <= 0;
-                        scl_max <= 1;  // Nâng SCL nhận ACK cuối cùng
-                        scl_max <= 0;
+                        scl_max <= 1;
                         state <= STOP_COND;
-                        delay_start <= 1;
                     end
                 end
 
                 STOP_COND: begin
                     if (delay_done) begin
-                        delay_start <= 0;
-                        // Tạo Stop condition: khi SCL = 1, SDA chuyển từ 0 lên 1
                         scl_max <= 1;
                         sda_out <= 1;
                         sda_oe  <= 1;
@@ -193,9 +163,28 @@ module i2c_master_max30100 (
                     end
                 end
 
+                READ_DATA: begin
+                    if (delay_done) begin
+                        scl_max <= 1;
+                        data_out[bit_cnt] <= sda_max;
+                        if (bit_cnt == 0) begin
+                            state <= READ_ACK;
+                            sda_oe <= 1;
+                        end else begin
+                            bit_cnt <= bit_cnt - 1;
+                        end
+                    end
+                end
+
+                READ_ACK: begin
+                    if (delay_done) begin
+                        scl_max <= 1;
+                        state <= STOP_COND;
+                    end
+                end
+
                 default: state <= IDLE;
             endcase
         end
     end
-
 endmodule

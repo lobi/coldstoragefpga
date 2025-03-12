@@ -1,12 +1,14 @@
 `timescale 1ns / 1ps
+
 //////////////////////////////////////////////////////////////////////////////////
 // Module: top_max30100_system
-// Description: Module tích hợp giao tiếp I²C với cảm biến MAX30100, lưu trữ dữ liệu 
-//              vào FIFO, xử lý tín hiệu thô (lọc và phát hiện đỉnh) và tính toán
-//              nhịp tim (BPM) và SpO₂ (%). Bus I²C của MAX30100 sử dụng sda_max, scl_max.
+// Description: Tích hợp giao tiếp I²C với cảm biến MAX30100, lưu trữ dữ liệu vào FIFO,
+//              xử lý tín hiệu thô (lọc và phát hiện đỉnh) và tính toán nhịp tim (BPM)
+//              và SpO₂ (%). Bus I²C của MAX30100 sử dụng sda_max, scl_max.
 //////////////////////////////////////////////////////////////////////////////////
+
 module top_max30100_system(
-    input         clk,         // Clock hệ thống (ví dụ 1MHz từ i2c_clk_delay)
+    input         clk,         // Clock hệ thống (ví dụ 50MHz)
     input         reset,       // Reset active high
     inout         sda_max,     // Bus SDA dành cho MAX30100
     output        scl_max,     // Bus SCL dành cho MAX30100
@@ -15,40 +17,51 @@ module top_max30100_system(
 );
 
     //-------------------------------------------------------------------------
-    // Giao tiếp I²C với MAX30100: i2c_master_max30100
-    // Module này đọc 1 byte dữ liệu từ thanh ghi FIFO của cảm biến.
+    // Clock Divider: Chia tần số xuống 1MHz
+    //-------------------------------------------------------------------------
+    wire clk_1MHz;
+
+    clk_divider #( 
+        .input_clk_freq(50_000_000),   // 50MHz
+        .output_clk_freq(1_000_000)    // 1MHz
+    ) clk_div_inst (
+        .clk(clk),
+        .clk_1MHz(clk_1MHz)
+    );
+
+    //-------------------------------------------------------------------------
+    // Giao tiếp I²C với MAX30100: Đọc dữ liệu IR và Red
+    //-------------------------------------------------------------------------
     wire [7:0] sensor_data_byte;
     wire sensor_ready;
     reg  sensor_start;
-    
+
     i2c_master_max30100 i2c_sensor_inst (
-        .clk(clk),
+        .clk(clk_1MHz),          // Sử dụng clock 1MHz mới
         .reset(reset),
         .start(sensor_start),
-        .rw(1'b1),           // Chế độ đọc
-        .slave_addr(7'h57),  // Địa chỉ MAX30100 (ví dụ)
-        .reg_addr(8'h09),    // Giả sử đọc từ thanh ghi FIFO_DATA
-        .data_in(8'd0),      // Không dùng cho chế độ read
+        .rw(1'b1),               // Chế độ đọc
+        .slave_addr(7'h57),      // Địa chỉ MAX30100
+        .reg_addr(8'h09),        // Thanh ghi FIFO_DATA
+        .data_in(8'd0),
         .data_out(sensor_data_byte),
         .ready(sensor_ready),
         .sda_max(sda_max),
         .scl_max(scl_max)
     );
-    
+
     //-------------------------------------------------------------------------
-    // Bộ nhớ FIFO: lưu trữ dữ liệu 16-bit từ cảm biến.
+    // FIFO Buffer: Lưu trữ tín hiệu IR và Red
     //-------------------------------------------------------------------------
     wire [15:0] fifo_data_out;
-    wire fifo_empty;
-    wire fifo_full;
-    reg  fifo_wr_en;
-    reg  fifo_rd_en;
+    wire fifo_empty, fifo_full;
+    reg  fifo_wr_en, fifo_rd_en;
     
-    fifo_buffer #(
+    fifo_buffer #( 
         .DATA_WIDTH(16),
         .FIFO_DEPTH(256)
     ) fifo_inst (
-        .clk(clk),
+        .clk(clk_1MHz),
         .reset(reset),
         .wr_en(fifo_wr_en),
         .rd_en(fifo_rd_en),
@@ -57,63 +70,45 @@ module top_max30100_system(
         .empty(fifo_empty),
         .full(fifo_full)
     );
-    
+
     //-------------------------------------------------------------------------
-    // Logic kết hợp 2 byte từ sensor để tạo thành dữ liệu 16-bit.
+    // Ghép dữ liệu IR và Red từ cảm biến
     //-------------------------------------------------------------------------
     reg [7:0] sensor_data_byte_reg;
     reg       byte_received;
     reg [15:0] sensor_raw;
-    
-    // Một state machine đơn giản kết hợp 2 byte:
-    reg [1:0] comb_state;
-    localparam COMB_IDLE   = 0,
-               COMB_FIRST  = 1,
-               COMB_SECOND = 2;
-               
-    always @(posedge clk or posedge reset) begin
+
+    always @(posedge clk_1MHz or posedge reset) begin
         if (reset) begin
-            comb_state <= COMB_IDLE;
             sensor_data_byte_reg <= 8'd0;
             sensor_raw <= 16'd0;
             byte_received <= 1'b0;
             fifo_wr_en <= 1'b0;
             sensor_start <= 1'b0;
         end else begin
-            // Luôn kích hoạt sensor_start để đọc dữ liệu liên tục
             sensor_start <= 1'b1;
-            case (comb_state)
-                COMB_IDLE: begin
-                    if (sensor_ready) begin
-                        sensor_data_byte_reg <= sensor_data_byte;
-                        byte_received <= 1'b1;
-                        comb_state <= COMB_SECOND;
-                    end
-                end
-                COMB_SECOND: begin
-                    if (sensor_ready) begin
-                        sensor_raw <= {sensor_data_byte_reg, sensor_data_byte};
-                        byte_received <= 1'b0;
-                        comb_state <= COMB_IDLE;
-                        // Ghi dữ liệu vào FIFO nếu chưa đầy
-                        if (!fifo_full)
-                            fifo_wr_en <= 1'b1;
-                        else
-                            fifo_wr_en <= 1'b0;
-                    end else begin
+            if (sensor_ready) begin
+                if (!byte_received) begin
+                    sensor_data_byte_reg <= sensor_data_byte;
+                    byte_received <= 1'b1;
+                end else begin
+                    sensor_raw <= {sensor_data_byte_reg, sensor_data_byte};
+                    byte_received <= 1'b0;
+                    if (!fifo_full)
+                        fifo_wr_en <= 1'b1;
+                    else
                         fifo_wr_en <= 1'b0;
-                    end
                 end
-                default: comb_state <= COMB_IDLE;
-            endcase
+            end else begin
+                fifo_wr_en <= 1'b0;
+            end
         end
     end
-    
+
     //-------------------------------------------------------------------------
-    // Đọc dữ liệu từ FIFO để cấp cho quá trình xử lý tín hiệu.
+    // Đọc dữ liệu từ FIFO để xử lý
     //-------------------------------------------------------------------------
-    // Nếu FIFO không rỗng, đọc dữ liệu.
-    always @(posedge clk or posedge reset) begin
+    always @(posedge clk_1MHz or posedge reset) begin
         if (reset)
             fifo_rd_en <= 1'b0;
         else if (!fifo_empty)
@@ -121,43 +116,42 @@ module top_max30100_system(
         else
             fifo_rd_en <= 1'b0;
     end
-    
+
     //-------------------------------------------------------------------------
-    // Raw Signal Processing: lọc dữ liệu và phát hiện đỉnh.
+    // Xử lý tín hiệu thô: Lọc dữ liệu và phát hiện đỉnh
     //-------------------------------------------------------------------------
-    wire [15:0] filtered_data;
+    wire [15:0] filtered_ir, filtered_red;
     wire peak_detected;
     reg new_sample;
-    
+
     raw_signal_processing_max30100 raw_proc_inst (
-        .clk(clk),
+        .clk(clk_1MHz),
         .reset(reset),
         .new_sample(new_sample),
         .raw_data(fifo_data_out),
-        .filtered_data(filtered_data),
+        .filtered_data(filtered_ir),
         .peak_detected(peak_detected)
     );
-    
-    // Dùng một logic đơn giản để kích hoạt new_sample mỗi khi FIFO được đọc.
-    always @(posedge clk or posedge reset) begin
+
+    always @(posedge clk_1MHz or posedge reset) begin
         if (reset)
             new_sample <= 0;
         else
             new_sample <= (fifo_rd_en && !fifo_empty);
     end
-    
+
     //-------------------------------------------------------------------------
-    // Vital Sign Calculation: tính toán heart_rate và spo2.
+    // Tính toán nhịp tim và SpO₂
     //-------------------------------------------------------------------------
     vital_sign_calculation_max30100 vital_calc_inst (
-        .clk(clk),
+        .clk(clk_1MHz),
         .reset(reset),
         .new_sample(new_sample),
         .peak_detected(peak_detected),
-        .filtered_ir(filtered_data),
-        .filtered_red(filtered_data), // Giả sử dùng cùng dữ liệu nếu chỉ có 1 kênh
+        .filtered_ir(filtered_ir),
+        .filtered_red(filtered_ir), // Giả sử chỉ có 1 kênh
         .heart_rate(heart_rate),
         .spo2(spo2)
     );
-    
+
 endmodule

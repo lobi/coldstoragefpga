@@ -14,11 +14,13 @@
 #########
 #Source files:
 #########
-#Do NOT ignore VHDL, Verilog, block diagrams or EDIF files.
+#Do NOT ignore VHDL, Verilog, block diagrams, EDIF, arduino files
 !*.vhd
 !*.v
 !*.bd
 !*.edif
+!*.ino
+!*.cpp
 #########
 #IP files
 #########

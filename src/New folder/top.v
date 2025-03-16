@@ -10,7 +10,8 @@ module top(
     // Bus IÂ²C cho LCD:
     inout         sda_lcd,
     output        scl_lcd,
-    output        tx 
+    input        rx1, 
+    output        tx1 
 );
 
 
@@ -76,15 +77,15 @@ module top(
         .done(done_display)            // Flag done khÃ´ng Ä‘Æ°á»£c xuáº¥t ra ngoÃ i
     );
 
-    UART_Transmit UART_Transmit_inst (
-        .clock(clk_1MHz),
+    top_uart top_uart_inst (
+        .clk_1MHz(clk_1MHz),
         .rst_n(rst_n),    // rst_n active low
         .heart_rate(heart_rate),
         .spo2(spo2),
-        .data_tx(tx),
-        .tx_done(),         
-        .parity_type    (2'b01),        // ODD parity
-        .baud_rate      (2'b10)       // 9600 baud
+        .rx(rx1),
+        .tx(tx1)
+        //.tx_done(),         
+
       
     );
 endmodule

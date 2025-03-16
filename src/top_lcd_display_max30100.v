@@ -1,27 +1,5 @@
 `timescale 1ns / 1ps
 //////////////////////////////////////////////////////////////////////////////////
-// Company: 
-// Engineer: 
-// 
-// Create Date: 03/02/2025 01:57:52 PM
-// Design Name: 
-// Module Name: lcd_display_max30100
-// Project Name: 
-// Target Devices: 
-// Tool Versions: 
-// Description: 
-// 
-// Dependencies: 
-// 
-// Revision:
-// Revision 0.01 - File Created
-// Additional Comments:
-// 
-//////////////////////////////////////////////////////////////////////////////////
-
-
-`timescale 1ns / 1ps
-//////////////////////////////////////////////////////////////////////////////////
 // Module: lcd_display_max30100
 // Description: Nhận các thông số heart_rate (BPM) và spo2 (%) từ hệ thống nội bộ,
 //              chuyển đổi chúng thành chuỗi ký tự định dạng cho LCD (2 hàng, 16 ký tự mỗi hàng)

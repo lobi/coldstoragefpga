@@ -40,6 +40,9 @@ const unsigned long debounceDelay = 50; // 50ms debounce time
 const unsigned long telemetryDelay = 2000; // 2s telemetry delay
 unsigned long lastTelemetryTime = 0;
 
+/* Configuration for Pulse Tracker*/
+
+
 
 /* General configuration */
 constexpr uint32_t SERIAL_DEBUG_BAUD = 115200U;
@@ -233,7 +236,8 @@ void send_telemetry(String key, String val) {
 
 void send_led_state() {
   if ((millis() - lastTelemetryTime) > telemetryDelay) {
-    send_telemetry("led_state", String(ledState ? "false" : "true"));
+    send_telemetry("heart_rate", String(ledState ? "false" : "true"));
+    send_telemetry("heart_rate", String(ledState ? "false" : "true"));
     lastTelemetryTime = millis(); // Update the timestamp here
   }
 }

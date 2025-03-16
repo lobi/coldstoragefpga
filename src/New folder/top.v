@@ -1,51 +1,91 @@
-module top_UART(
-    input       clk,
-    input       btn,
-    input       rx,
-    output      tx,
-    output      led
+`timescale 1ns / 1ps
+
+//////////////////////////////////////////////////////////////////////////////////
+module top(
+    input         clk,      // Clock nguá»“n, vÃ­ dá»¥ 50MHz
+    input         rst_n,       // Reset active high
+    // Bus IÂ²C cho MAX30100:
+    inout         sda_max,
+    output        scl_max,
+    // Bus IÂ²C cho LCD:
+    inout         sda_lcd,
+    output        scl_lcd,
+    output        tx 
 );
 
-    reg         send;
-    wire [7:0]  data_received;
-    wire        rx_done_flag;
 
+    //********************************************************************
+    // Instantiation: i2c_clk_delay
+    //********************************************************************
+    // Chia clock tá»« clk_in (50MHz) xuá»‘ng 1MHz.
+    wire clk_1MHz;
+   // wire delay_done_unused; // TÃ­n hiá»‡u delay_done khÃ´ng cáº§n xuáº¥t ra ngoÃ i
 
-
-    Duplex UART_Driver(
-        //  Inputs
-        .reset_n        (1),
-        .send           (btn), 
-        .clock          (clk),
-        .parity_type    (2'b01),        // ODD parity
-        .baud_rate      (2'b10),        // 9600 baud
-        .data_transmit  (8'h55),        // ASCII of 'U'
-        .rx             (rx),
-        //  Outputs
-        .tx             (tx),
-        .tx_active_flag (),
-        .tx_done_flag   (),
-        .rx_active_flag (),
-        .rx_done_flag   (rx_done_flag),
-        .data_received  (data_received),
-        .error_flag     ()
-    );
-
-
-    //wire        btn_pressed;
-    // //  Instance for the rising edge detector
-    // rising_edge_detect BTN_pressed_detect(
-    //     .clk            (clk),
-    //     .btn            (btn),
-    //     .rising_edge    (btn_pressed)
-    // );
- /*   // Instance for the LED toggle
-    toggle_led LED_Toggle(
-        .clk            (clk),
-        .rx_done_flag   (rx_done_flag),
-        .opcode         (data_received),
-        .led            (led)
+/*    i2c_clk_delay #(
+        .DIVISOR(50),       // Vá»›i clk_in = 50MHz, divisor = 50 Ä‘á»ƒ táº¡o xung 1MHz (toggle-based)
+        .DELAY_COUNT(50000) // Tham sá»‘ delay ná»™i bá»™ (cÃ³ thá»ƒ Ä‘iï¿½?u chá»‰nh)
+    ) i2c_clk_delay_inst (
+        .clk_in(clk_in),
+        .reset(reset),
+        .start(1'b1),       // LuÃ´n kÃ­ch hoáº¡t
+        .clk_out(clk_1MHz),
+        .delay_done(delay_done_unused)
     );*/
 
+    clk_divider#(
+        .input_clk_freq(100_000_000),  
+        .output_clk_freq(1_000_000)
+    )clk_div_inst(
+        .clk(clk),
+        .clk_1MHz(clk_1MHz)
+    );
+    
+    //********************************************************************
+    // Instantiation: top_max30100_system
+    //********************************************************************
+    // Module nÃ y giao tiáº¿p vá»›i MAX30100 qua bus riÃªng (sda_max, scl_max),
+    // xá»­ lÃ½ dá»¯ liá»‡u, lï¿½?c tÃ­n hiá»‡u vÃ  tÃ­nh toÃ¡n cÃ¡c thÃ´ng sá»‘ heart_rate, spo2.
+    // CÃ¡c káº¿t quáº£ chá»‰ Ä‘Æ°á»£c sá»­ dá»¥ng ná»™i bá»™.
+    wire [15:0] heart_rate;
+    wire [7:0]  spo2;
+    
+    top_max30100_system sensor_system_inst (
+        .clk_1MHz(clk_1MHz),
+        .rst_n(rst_n),
+        .sda_max(sda_max),
+        .scl_max(scl_max),
+        .heart_rate(heart_rate),
+        .spo2(spo2)
+    );
 
+    //********************************************************************
+    // Instantiation: lcd_display_max30100
+    //********************************************************************
+    // Module nÃ y nháº­n cÃ¡c thÃ´ng sá»‘ heart_rate vÃ  spo2 ná»™i bá»™ vÃ  hiá»ƒn thá»‹ lÃªn LCD
+    // qua bus IÂ²C riÃªng (sda_lcd, scl_lcd). CÃ¡c thÃ´ng sá»‘ chá»‰ dÃ¹ng ná»™i bá»™.
+    
+    wire done_display;
+    
+    lcd_display_max30100 lcd_display_inst (
+        .clk_1MHz(clk_1MHz),
+        .rst_n(rst_n),    // rst_n active low
+        .heart_rate(heart_rate),
+        .spo2(spo2),
+        .sda_lcd(sda_lcd),
+        .scl_lcd(scl_lcd),
+        .done(done_display)            // Flag done khÃ´ng Ä‘Æ°á»£c xuáº¥t ra ngoÃ i
+    );
+
+    UART_Transmit UART_Transmit_inst (
+        .clock(clk_1MHz),
+        .rst_n(rst_n),    // rst_n active low
+        .heart_rate(heart_rate),
+        .spo2(spo2),
+        .data_tx(tx),
+        .tx_done(),         
+        .parity_type    (2'b01),        // ODD parity
+        .baud_rate      (2'b10)       // 9600 baud
+      
+    );
 endmodule
+

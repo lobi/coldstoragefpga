@@ -1,9 +1,12 @@
 module UART_Transmit (
-    input wire clk,            // System Clock
+    input wire clock,            // System Clock
     input wire rst_n,          // Active Low Reset
-    input wire start_tx,       // Signal to Start Transmission
+   // input wire start_tx,       // Signal to Start Transmission
     input wire [15:0] heart_rate,  // 16-bit Heart Rate Data
     input wire [7:0] spo2,        // 8-bit SpO2 Data
+    input   wire  [1:0]  parity_type,   //  Parity type agreed upon by the Tx and Rx units.
+    input   wire  [1:0]  baud_rate,     //  Baud Rate agreed upon by the Tx and Rx units.
+ 
     output wire data_tx,         // UART TX Line
     output wire tx_done          // Transmission Done
 );
@@ -14,9 +17,9 @@ module UART_Transmit (
     
     wire done_flag;
     wire active_flag;
-
+    wire start_tx = 1;
     // Load Heart Rate and SpO2 data into the buffer (Little Endian Format)
-    always @(posedge clk or negedge rst_n) begin
+    always @(posedge clock or negedge rst_n) begin
         if (!rst_n) begin
             index <= 0;
             send_signal <= 0;
@@ -34,7 +37,7 @@ module UART_Transmit (
 
     // Instantiate TxUnit to send data
     TxUnit uart_tx (
-        .rst_n(rst_n),
+        .reset_n(rst_n),
         .send(send_signal),
         .clock(clock),
         .parity_type(parity_type),
@@ -48,4 +51,5 @@ module UART_Transmit (
     assign tx_done = (index == 4) ? 1 : 0;
 
 endmodule
+
 

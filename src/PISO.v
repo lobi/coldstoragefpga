@@ -9,6 +9,7 @@ module PISO(
     output reg          done_flag
 );
 
+    // States of the PISO state machine
     localparam          IDLE    = 1'b0, 
                         ACTIVE  = 1'b1;
 
@@ -20,15 +21,15 @@ module PISO(
     assign data_out = {1'b1, parity_bit, data_in, 1'b0};
 
     // To detect the rising edge of the send signal
-    reg send_prev;
-    always @(posedge baud_clk or negedge reset_n) begin
-        if (!reset_n) begin
-            send_prev <= 1'b0;
-        end else begin
-            send_prev <= send;
-        end
-    end
-    wire send_rising_edge = send & ~send_prev;
+    // reg send_prev;
+    // always @(posedge baud_clk or negedge reset_n) begin
+    //     if (!reset_n) begin
+    //         send_prev <= 1'b0;
+    //     end else begin
+    //         send_prev <= send;
+    //     end
+    // end
+    // wire send_rising_edge = send & ~send_prev;
 
     //  PISO state machine
     always @(posedge baud_clk or negedge reset_n) begin
@@ -38,22 +39,27 @@ module PISO(
             active_flag <= 1'b0;
             done_flag <= 1'b0;
         end else begin
+            $display("PISO state: %b", STATE);
             case (STATE)
                 IDLE: begin
-                    if (send_rising_edge) STATE <= ACTIVE;
-                        else STATE <= IDLE;
+                    if (send) 
+                        STATE <= ACTIVE;
+                    else 
+                        STATE <= IDLE;
                     data_tx <= 1'b1;
                     active_flag <= 1'b0;
                     count <= 4'd0;
                 end
                 ACTIVE: begin
                     if (count == 11) begin
+                        // Done transmitting the frame, let's go back to IDLE state
                         STATE <= IDLE;
                         data_tx <= 1'b1;
                         active_flag <= 1'b0;
                         done_flag <= 1'b1;  
                         count <= 0;
                     end else begin
+                        // Transmit the data
                         STATE <= ACTIVE;
                         data_tx <= data_out[count];
                         active_flag <= 1'b1;

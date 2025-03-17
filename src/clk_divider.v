@@ -1,5 +1,5 @@
 module clk_divider #(
-	parameter   input_clk_freq  = 100_000_000,      // Input clock 100 MHz
+    parameter   input_clk_freq  = 100_000_000,      // Input clock 100 MHz
     parameter   output_clk_freq =   1_000_000       // Output clock  1 MHz = 1 us
 )(
     input       clk,
@@ -20,3 +20,4 @@ module clk_divider #(
     assign clk_1MHz = clk_1MHz_temp;
     
 endmodule
+

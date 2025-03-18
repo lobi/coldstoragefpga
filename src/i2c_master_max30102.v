@@ -14,7 +14,7 @@ module i2c_master_max30100 (
     output reg        scl_max     // Bus SCL
 );
 
-    // Định nghĩa các trạng thái FSM bằng localparam (thay cho typedef enum)
+    // Định nghĩa các trạng thái FSM
     localparam IDLE        = 4'b0000;
     localparam START_COND  = 4'b0001;
     localparam SEND_ADDR   = 4'b0010;
@@ -26,6 +26,7 @@ module i2c_master_max30100 (
     localparam STOP_COND   = 4'b1000;
     localparam READ_DATA   = 4'b1001;
     localparam READ_ACK    = 4'b1010;
+    localparam WAIT_DELAY  = 4'b1011;
 
     reg [3:0] state;  // Trạng thái của FSM
     reg [3:0] bit_cnt;
@@ -36,7 +37,7 @@ module i2c_master_max30100 (
 
     // Bộ đếm delay cho I²C 100 kHz (~10 µs mỗi tick)
     reg [7:0] delay_counter;
-    wire delay_done = (delay_counter == 10); // 10 ticks ~ 100 µs
+    wire delay_done = (delay_counter == 10);
 
     always @(posedge clk_1MHz or negedge rst_n) begin
         if (!rst_n)
@@ -80,12 +81,12 @@ module i2c_master_max30100 (
                     end
                 end 
 
-                SEND_ADDR: begin
+                SEND_ADDR, SEND_REG, WRITE_DATA: begin
                     if (delay_done) begin
                         scl_max <= 0;
                         sda_out <= tx_byte[bit_cnt];
                         if (bit_cnt == 0) begin
-                            state <= ACK1;
+                            state <= state + 1;
                             sda_oe <= 0;
                         end else begin
                             bit_cnt <= bit_cnt - 1;
@@ -93,74 +94,10 @@ module i2c_master_max30100 (
                     end
                 end 
 
-                ACK1: begin
+                ACK1, ACK2, ACK3: begin
                     if (delay_done) begin
                         scl_max <= 1;
-                        if (rw == 0) begin
-                            state   <= SEND_REG;
-                            tx_byte <= reg_addr;
-                            bit_cnt <= 7;
-                            sda_oe  <= 1;
-                        end else begin
-                            state <= READ_DATA;
-                            sda_oe <= 0;
-                        end
-                    end
-                end 
-
-                SEND_REG: begin
-                    if (delay_done) begin
-                        scl_max <= 0;
-                        sda_out <= tx_byte[bit_cnt];
-                        if (bit_cnt == 0) begin
-                            state <= ACK2;
-                            sda_oe <= 0;
-                        end else begin
-                            bit_cnt <= bit_cnt - 1;
-                        end
-                    end
-                end 
-
-                ACK2: begin
-                    if (delay_done) begin
-                        scl_max <= 1;
-                        if (rw == 0) begin
-                            tx_byte <= data_in;
-                            bit_cnt <= 7;
-                            state   <= WRITE_DATA;
-                        end else begin
-                            state <= IDLE;
-                        end
-                    end
-                end 
-
-                WRITE_DATA: begin
-                    if (delay_done) begin
-                        scl_max <= 0;
-                        sda_out <= tx_byte[bit_cnt];
-                        if (bit_cnt == 0) begin
-                            state <= ACK3;
-                            sda_oe <= 0;
-                        end else begin
-                            bit_cnt <= bit_cnt - 1;
-                        end
-                    end
-                end 
-
-                ACK3: begin
-                    if (delay_done) begin
-                        scl_max <= 1;
-                        state <= STOP_COND;
-                    end
-                end 
-
-                STOP_COND: begin
-                    if (delay_done) begin
-                        scl_max <= 1;
-                        sda_out <= 1;
-                        sda_oe  <= 1;
-                        state   <= IDLE;
-                        ready   <= 1;
+                        state   <= state + 1;
                     end
                 end 
 
@@ -180,7 +117,17 @@ module i2c_master_max30100 (
                 READ_ACK: begin
                     if (delay_done) begin
                         scl_max <= 1;
-                        state <= STOP_COND;
+                        state   <= STOP_COND;
+                    end
+                end 
+
+                STOP_COND: begin
+                    if (delay_done) begin
+                        scl_max <= 1;
+                        sda_out <= 1;
+                        sda_oe  <= 1;
+                        state   <= IDLE;
+                        ready   <= 1;
                     end
                 end 
 

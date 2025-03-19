@@ -12,9 +12,13 @@ module top_uart(
   output wire led_2
 );
 
-  reg send_signal = 0;
-  wire tx_done_flag;
+  reg send_signal;
+  wire tx_done_flag, tx_active_flag;
   wire rx_done_flag;
+
+  // buffer rx
+  reg [7:0] temp_rx[0:7];
+  reg [2:0] rx_counter = 0;
 
   // convert data_heart_rate of decimal to ascii characters
   reg [7:0] ascii_0, ascii_1, ascii_2, ascii_3, ascii_4; // ASCII digits
@@ -22,7 +26,7 @@ module top_uart(
   reg [7:0] data_tx;
   wire [7:0] data_rx; // wire
   reg [2:0] tx_byte_counter; // Counter to keep track of which TX byte to send
-  reg [2:0] rx_byte_counter; // Counter to keep track of which RX byte to receive
+  reg [2:0] rx_leds_byte_counter; // Counter to keep track of which RX byte to receive
   reg [7: 0] ascii_led_1, ascii_led_2;
 
   // leds
@@ -62,7 +66,10 @@ module top_uart(
       data_tx <= 8'h30; // ASCII '0'
       send_signal <= 0;
       tx_byte_counter <= 0;
-    end else if (tx_done_flag) begin
+    end else if (!tx_active_flag && tx_done_flag) begin
+      // If the FSM is not in active mode and the previous ascii data has been sent, than send the next ascii data
+
+      // Convert data to ASCII
       // heart rate: [ascii_2][ascii_1][ascii_0] e.g.: 075 (75 bpm)
       temp = data_heart_rate;
       ascii_2 = (temp % 10) + 8'h30; temp = temp / 10;
@@ -90,6 +97,8 @@ module top_uart(
         7: data_tx <= 8'h0A;      // Newline ASCII of '\n'
       endcase
 
+      $display("top_uart: Sending data: %c", data_tx);
+
       if (tx_byte_counter < 7) begin
         tx_byte_counter <= tx_byte_counter + 1;
       end else begin
@@ -108,32 +117,49 @@ module top_uart(
       led_1_state = 0;
       led_2_state = 0;
     end else if (rx_done_flag) begin
-      case (rx_byte_counter)
-        0: if (data_rx == 8'h4C) rx_byte_counter <= rx_byte_counter + 1; // Check for 'L' (led)
-        1: if (data_rx == 8'h3A) rx_byte_counter <= rx_byte_counter + 1; // Check for ':'
-        2: begin
-          ascii_led_1 <= data_rx;
-          rx_byte_counter <= rx_byte_counter + 1;
-        end
-        3: begin
-          ascii_led_2 <= data_rx;
-          rx_byte_counter <= rx_byte_counter + 1;
-        end
-        4: begin
-          if (data_rx == 8'h0A) begin // Check for '\n'
-            // Data reception complete, process the received data
-            rx_byte_counter <= 0;
-          end else begin
-            // If not '\n', reset the counter to start over
-            // actually, it's incorrect! But I don't care since a already have enough data :)
-            rx_byte_counter <= 0;
-          end
+      // shift data_rx to temp_rx for other purposes:
+      temp_rx[rx_counter] <= data_rx;
+      rx_counter <= rx_counter + 1;
+      if (rx_counter == 7) begin
+        rx_counter <= 0;
+      end
 
-          // let proceed to handle the received data
-          // e.g.: display the received data on the LEDs
-          led_1_state <= (ascii_2 == 8'h30) ? 1'b1 : 1'b0; // ASCII '0'
-          led_2_state <= (ascii_1 == 8'h30) ? 1'b1 : 1'b0; // ASCII '0'
+      // Finite state machine to detect if the received data is for controlling the LEDs:
+      // LEDs controlling format: L:[ascii_led_1][ascii_led_2]\n. e.g.: L:01\n (LED 1 ON, LED 2 OFF)
+      case (rx_leds_byte_counter)
+      0: begin
+        if (data_rx == 8'h4C) // Check for 'L' (led)
+        rx_leds_byte_counter <= 1;
+        else
+        rx_leds_byte_counter <= 0; // Reset if not 'L'
+      end
+      1: begin
+        if (data_rx == 8'h3A) // Check for ':'
+        rx_leds_byte_counter <= 2;
+        else
+        rx_leds_byte_counter <= 0; // Reset if not ':'
+      end
+      2: begin
+        ascii_led_1 <= data_rx; // Store first LED data
+        rx_leds_byte_counter <= 3;
+      end
+      3: begin
+        ascii_led_2 <= data_rx; // Store second LED data
+        rx_leds_byte_counter <= 4;
+      end
+      4: begin
+        if (data_rx == 8'h0A) begin // Check for '\n'
+          // Data reception complete, process the received data
+          rx_leds_byte_counter <= 0;
+
+          // Handle the received data
+          led_1_state <= (ascii_led_1 == 8'h31) ? 1'b1 : 1'b0; // ASCII '1' for ON
+          led_2_state <= (ascii_led_2 == 8'h31) ? 1'b1 : 1'b0; // ASCII '1' for ON
+        end else begin
+        // If not '\n', reset the counter to start over
+        rx_leds_byte_counter <= 0;
         end
+      end
       endcase
     end
   end
@@ -149,7 +175,7 @@ module top_uart(
     .rx             (rx),
     //  Outputs
     .tx             (tx),
-    .tx_active_flag (),
+    .tx_active_flag (tx_active_flag),
     .tx_done_flag   (tx_done_flag),
     .rx_active_flag (),
     .rx_done_flag   (rx_done_flag),

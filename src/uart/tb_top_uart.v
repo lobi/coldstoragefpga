@@ -27,7 +27,7 @@ module tb_top_uart;
   );
 
   // Clock generation
-  always #5 clk = ~clk;
+  always #1 clk = ~clk;
 
   initial begin
     $display("top_uart testbench started.");
@@ -39,19 +39,24 @@ module tb_top_uart;
     rx = 1;
 
     // Wait for global reset
-    #100;
+    #10;
     rst_n = 1;
+    // #10;
+    // rst_n = 0;
 
     // Test case 1: Send heart rate and SpO2 data
     data_heart_rate = 16'd75; // 75 bpm
     data_spo2 = 8'd98; // 98% SpO2
-    #1000000; // Wait for 1 second
+    // wait for 1 second
+    // # 1_000_000
+    // wait(tx_done_flag == 1);
 
     // Test case 2: Send another set of heart rate and SpO2 data
     data_heart_rate = 16'd125; // 125 bpm
     data_spo2 = 8'd80; // 80% SpO2
     // #1000000; // Wait for 1 second
-    # 100
+    // # 100
+    // wait(tx_done_flag == 1);
 
     // Test case 3: Simulate receiving data to control LEDs
     $display("top_uart testbench: Simulating receiving data to control LEDs");

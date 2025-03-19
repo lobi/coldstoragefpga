@@ -40,6 +40,10 @@ const unsigned long debounceDelay = 50; // 50ms debounce time
 const unsigned long telemetryDelay = 2000; // 2s telemetry delay
 unsigned long lastTelemetryTime = 0;
 
+String HR_KEY = "heart_rate";
+String SPO2_KEY = "spo2";
+
+
 /* Configuration for Pulse Tracker*/
 
 
@@ -230,8 +234,6 @@ void send_telemetry(String key, String val) {
   payload.toCharArray(telemetry, 100);
   client.publish("v1/devices/me/telemetry", telemetry);
   Serial.println("telemetry was sent: " + val);
-
-  
 }
 
 void send_led_state() {

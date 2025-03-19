@@ -39,7 +39,7 @@ module PISO(
             active_flag <= 1'b0;
             done_flag <= 1'b0;
         end else begin
-            $display("PISO state: %b", STATE);
+            
             case (STATE)
                 IDLE: begin
                     if (send) 
@@ -68,6 +68,8 @@ module PISO(
                     end
                 end
             endcase
+
+            $display("PISO state: %b, value: %b, of %c", STATE, data_tx, data_in);
         end
     end
 

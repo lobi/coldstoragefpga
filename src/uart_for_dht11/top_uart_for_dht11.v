@@ -68,7 +68,7 @@ module top_uart_for_dht11(
       send_next_byte <= 0;
       tx_byte_counter <= 0;
     end else if (send && !tx_active_flag && tx_done_flag) begin
-      // If the FSM is not in active mode and the previous ascii data has been sent, than send the next ascii data
+      // If enable to send, the FSM is not in active mode and the previous ascii data has been sent, than send the next ascii data
 
       // Convert temperature data to ASCII : [ch_temp1][ch_temp0] e.g.: 05 (05 Celsius)
       temp = temperature;

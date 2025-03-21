@@ -65,8 +65,8 @@ module top_coldstorage(
     .clk_1MHz(clk_1MHz),
     .rst_n(rst_n),
     .signal(dht11_data),
-    .humidity(humidity_test),
-    .temperature(temperature_test)
+    .humidity(humidity),
+    .temperature(temperature)
   );
 
 
@@ -78,8 +78,8 @@ module top_coldstorage(
   uart_string uart_string_inst(
     .clk_100Mhz(clk),
     .rst_n(rst_n),
-    .temperature(temperature_test),
-    .humidity(humidity_test),
+    .temperature(temperature),
+    .humidity(humidity),
     .rx(rx),
     .tx(tx),
     .led_1(led_1),

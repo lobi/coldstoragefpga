@@ -46,50 +46,57 @@ module uart_string(
   end
 
   // Sending logic - TX Handler
+  reg STATE_STR;
   always @(posedge clk_100Mhz or negedge rst_n) begin
     if (!rst_n) begin
-      tx_msg[0] = 8'h53; // ASCII 'S'
-      tx_msg[1] = 8'h3A; // ASCII ':'
-      tx_msg[2] = 8'h30; // ASCII '0'
-      tx_msg[3] = 8'h30; // ASCII '0'
-      tx_msg[4] = 8'h30; // ASCII '0'
-      tx_msg[5] = 8'h30; // ASCII '0'
-      tx_msg[6] = 8'h0A; // ASCII '\n'
+      // Reset all states and signals
+      tx_msg[0] <= 8'h53; // ASCII 'S'
+      tx_msg[1] <= 8'h3A; // ASCII ':'
+      tx_msg[2] <= 8'h30; // ASCII '0'
+      tx_msg[3] <= 8'h30; // ASCII '0'
+      tx_msg[4] <= 8'h30; // ASCII '0'
+      tx_msg[5] <= 8'h30; // ASCII '0'
+      tx_msg[6] <= 8'h0A; // ASCII '\n
 
       tx_index <= 0;
       send_start <= 0;
       timer_count <= 0;
+      STATE_STR <= 0;
     end else begin
-      // disable sending when tx_done
-      if (tx_done) begin
-        send_start <= 0;
-      end
-
-      // Timer logic for 1-second interval
-      if (timer_count < SEND_INTERVAL - 1 && tx_index == 0) begin
-        timer_count <= timer_count + 1;
-      end else begin
-        timer_count <= 0;   // Reset timer after 1 second
-        // Send 7 bytes of data, one by one
-        if (!tx_busy) begin
-          // tx_index <= 0;    // Reset character index
-          send_start <= 1;  // Start sending
-
-          // update current data of temperature and humidity
-          // Convert temperature & humidity to ASCII characters
-          tx_msg[2] <= temperature / 10 + 8'h30;
-          tx_msg[3] <= temperature % 10 + 8'h30;
-          tx_msg[4] <= humidity / 10 + 8'h30;
-          tx_msg[5] <= humidity % 10 + 8'h30;
+      case (STATE_STR)
+        0: begin
+          // Wait for 1-second interval
+          if (timer_count == SEND_INTERVAL) begin
+            timer_count <= 0;
+            STATE_STR <= 1; // Transition to sending state
+          end else begin
+            timer_count <= timer_count + 1;
+          end
         end
-      end
+        1: begin
+          // Update sensor data at the start of transmission
+          if (tx_index == 0) begin
+            tx_msg[2] <= temperature / 10 + 8'h30;
+            tx_msg[3] <= temperature % 10 + 8'h30;
+            tx_msg[4] <= humidity / 10 + 8'h30;
+            tx_msg[5] <= humidity % 10 + 8'h30;
+          end
 
-      // Sending character logic
-      if (send_start && tx_done) begin
-        tx_data <= tx_msg[tx_index]; // Load character to send
-        tx_index <= (tx_index < 7) ? tx_index + 1 : 0; // Increment or reset index
-        send_start <= (tx_index < 7); // Continue sending until all characters are sent
-      end
+          // Send one character at a time
+          if (!tx_busy && !send_start) begin
+            tx_data <= tx_msg[tx_index];  // Load the current character
+            send_start <= 1;              // Start UART transmission
+          end else if (tx_done) begin
+            send_start <= 0;              // Clear send_start after transmission
+            if (tx_index < 6) begin
+              tx_index <= tx_index + 1;   // Move to the next character
+            end else begin
+              tx_index <= 0;              // Reset index after all characters are sent
+              STATE_STR <= 0;             // Transition back to idle state
+            end
+          end
+        end
+      endcase
     end
   end
 

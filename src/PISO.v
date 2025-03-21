@@ -49,6 +49,7 @@ module PISO(
                     data_tx <= 1'b1;
                     active_flag <= 1'b0;
                     count <= 4'd0;
+                    done_flag <= 1'b0;
                 end
                 ACTIVE: begin
                     if (count == 11) begin

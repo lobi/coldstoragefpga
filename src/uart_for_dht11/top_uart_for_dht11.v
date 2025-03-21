@@ -1,5 +1,8 @@
+/* 
+  
+*/
 module top_uart_for_dht11(
-  input wire clk,
+  input wire clk_100Mhz,
   input wire rst_n,
   input wire send, // enable signal for sending data to uart
 
@@ -8,6 +11,7 @@ module top_uart_for_dht11(
 
   input wire rx,
   output wire tx,
+  output reg tx_str_ready,
 
   output wire led_1,
   output wire led_2
@@ -37,11 +41,31 @@ module top_uart_for_dht11(
   assign led_1 = led_1_state;
   assign led_2 = led_2_state;
 
+  /*
+  reg [6:0] message [0:7];
+  initial begin
+    send_next_byte = 0;
+    tx_str_ready = 0;
+    tx_byte_counter = 0;
+    rx_leds_byte_counter = 0;
+
+    // S:[temperature_high][temperature_low][humidity_high][humidity_low]\n
+    message[0] = 8'h53; // ASCII 'S'
+    message[1] = 8'h3A; // ASCII ':'
+    message[2] = 8'h30; // ASCII '0'
+    message[3] = 8'h30; // ASCII '0'
+    message[4] = 8'h30; // ASCII '0'
+    message[5] = 8'h30; // ASCII '0'
+    message[6] = 8'h0A; // ASCII '\n'
+  end
+  */
+
 
   /* handle timing to send data_heart_rate and data_spo2 by control send_next_byte. send every 1s */
+  /*
   reg [31:0] counter = 0;
-  reg [31:0] counter_1s = 10; // 1_000_000; // 1s
-  always @(posedge clk or negedge rst_n) begin
+  reg [31:0] counter_1s = 1_000_000; // 1_000_000; // 1s
+  always @(posedge clk_100Mhz or negedge rst_n) begin
     if (!rst_n) begin
       send_next_byte <= 0;
       counter <= 0;
@@ -54,59 +78,82 @@ module top_uart_for_dht11(
       end
     end
   end
+  */
 
-
-  /*TX handler*/
-  always @(posedge clk or negedge rst_n) begin
+  /*
+  TX Handler:
+  Send a string of ASCII characters to the UART module.
+  The ASCII string is formatted as follows: S:[temperature_high][temperature_low][humidity_high][humidity_low]\n
+  For example, if the temperature is 25 degrees Celsius and the humidity is 50%, the ASCII string would be: S:2550\n
+  */
+  always @(posedge clk_100Mhz or negedge rst_n) begin
     if (!rst_n) begin
-      ch_temp0 <= 8'h30; // ASCII '0'
-      ch_temp1 <= 8'h30; // ASCII '0'
-      ch_hum0 <= 8'h30; // ASCII '0'
-      ch_hum1 <= 8'h30; // ASCII '0'
-
-      data_tx <= 8'h30; // ASCII '0'
-      send_next_byte <= 0;
+      tx_str_ready <= 0;
       tx_byte_counter <= 0;
-    end else if (send && !tx_active_flag && tx_done_flag) begin
-      // If enable to send, the FSM is not in active mode and the previous ascii data has been sent, than send the next ascii data
+      data_tx <= 8'h30; // ASCII '0'
+      send_next_byte <= 0; // Reset send_next_byte to 0 on reset
+    end else if (send) begin
+      // Finite state machine to send the temperature and humidity data
 
-      // Convert temperature data to ASCII : [ch_temp1][ch_temp0] e.g.: 05 (05 Celsius)
-      temp = temperature;
-      ch_temp1 = (temp % 10) + 8'h30; temp = temp / 10;
-      ch_temp0 = (temp % 10) + 8'h30;
-
-      // Convert humidity data to ASCII: [ch_hum0][ch_hum1] e.g.: 55 (98%)
-      temp = humidity;
-      ch_hum1 = (temp % 10) + 8'h30; temp = temp / 10;
-      ch_hum0 = (temp % 10) + 8'h30;
-
-      // We need to send 7 bytes of data
-      // Format:      S:[ch_temp1][ch_temp0][ch_hum1][ch_hum0]\n
-      // Sample 1:    S:0598\n (05 Celsius, 98%)
-      // Sample 2:    S:1598\n (15 Celsius, 98%)
-      case (tx_byte_counter)
-        0: data_tx <= 8'h53;      // Command: ASCII of 'S'
-        1: data_tx <= 8'h3A;      // Delimiter: ASCII of ':'
-        2: data_tx <= ch_temp1;    // 1st ASCII of temperature
-        3: data_tx <= ch_temp0;    // 2nd ASCII of temperature
-        4: data_tx <= ch_hum1;    // 1st ASCII of humidity
-        5: data_tx <= ch_hum0;    // 2nd ASCII of humidity
-        6: data_tx <= 8'h0A;      // Newline ASCII of '\n'
-      endcase
-
-      $display("top_uart: Sending data: %c", data_tx);
-
-      if (tx_byte_counter < 7) begin
-        tx_byte_counter <= tx_byte_counter + 1;
-      end else begin
-        tx_byte_counter <= 0;
-        send_next_byte <= 0; // Stop sending after the last byte
+      if (send_next_byte) begin
+        // 1. Update current data_tx
+        case (tx_byte_counter)
+        0: begin
+          data_tx <= 8'h53; // ASCII 'S'
+          tx_byte_counter <= 1;
+        end
+        1: begin
+          // Convert temperature to ASCII characters
+          temp = temperature;
+          ch_temp0 = temp % 10;
+          ch_temp1 = temp / 10;
+          ascii_0 = ch_temp0 + 8'h30; // Convert to ASCII
+          ascii_1 = ch_temp1 + 8'h30; // Convert to ASCII
+          data_tx <= ascii_1;
+          tx_byte_counter <= 2;
+        end
+        2: begin
+          data_tx <= ascii_0;
+          tx_byte_counter <= 3;
+        end
+        3: begin
+          // Convert humidity to ASCII characters
+          temp = humidity;
+          ch_hum0 = temp % 10;
+          ch_hum1 = temp / 10;
+          ascii_2 = ch_hum0 + 8'h30; // Convert to ASCII
+          ascii_3 = ch_hum1 + 8'h30; // Convert to ASCII
+          data_tx <= ascii_3;
+          tx_byte_counter <= 4;
+        end
+        4: begin
+          data_tx <= ascii_2;
+          tx_byte_counter <= 5;
+        end
+        5: begin
+          data_tx <= 8'h0A; // ASCII '\n'
+          tx_byte_counter <= 0;
+          tx_str_ready <= 1;
+        end
+        endcase
       end
+
+      // 2. Check if UART is not busy(not in active) to send the next byte
+      if (!tx_active_flag == 0) begin
+        send_next_byte <= 1;
+        if (tx_str_ready) begin
+          tx_str_ready <= 0; // Reset tx_str_ready after being set
+        end
+      end else begin
+        send_next_byte <= 0;
+      end
+
     end
   end
 
+
   /*RX handler*/
-  always @(posedge clk or negedge rst_n) begin
+  always @(posedge clk_100Mhz or negedge rst_n) begin
     if (!rst_n) begin
       // data_rx <= 8'h30; // ASCII '0'
 
@@ -164,8 +211,8 @@ module top_uart_for_dht11(
   // Instantiate Duplex uart module
   Duplex UART_Driver (
     .reset_n        (rst_n),
-    .send           (1), 
-    .clock          (clk),
+    .send           (send_next_byte), 
+    .clock          (clk_100Mhz),
     .parity_type    (2'b01),        // ODD parity
     .baud_rate      (2'b10),        // 9600 baud
     .data_transmit  (data_tx),        // ASCII of 'U'

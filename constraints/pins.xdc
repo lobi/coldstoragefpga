@@ -15,8 +15,9 @@ set_property PACKAGE_PIN D7 [get_ports rx_0]
 set_property PACKAGE_PIN D6 [get_ports tx_0]
 set_property PACKAGE_PIN F7 [get_ports sda_lcd_0]
 set_property PACKAGE_PIN F8 [get_ports scl_lcd_0]
-set_property PACKAGE_PIN F6 [get_ports led_fan_0]
-set_property PACKAGE_PIN G7 [get_ports led_hum_0]
+set_property PACKAGE_PIN F4 [get_ports led_fan_0]
+set_property PACKAGE_PIN B6 [get_ports led_hum_0]
 set_property PACKAGE_PIN D8 [get_ports led_mod_0]
 set_property PACKAGE_PIN E6 [get_ports dht11_data_0]
+
 

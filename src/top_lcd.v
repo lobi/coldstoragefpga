@@ -1,72 +1,69 @@
-module top(
-    input           clk,
-    input           rst_n,
-    output          scl,
-    input  [15:0]   heart_rate,    
-    input  [7:0]    spo2,  
-    inout           sda
+module top_lcd(
+    input           clk,                // Main clock
+    input           rst_n,              // Active low reset
+    input  [7:0]    temperature,        // Temperature input (8-bit integer)
+    input  [7:0]    humidity,           // Humidity input (8-bit integer)
+    output          scl,                // I2C clock line
+    inout           sda                 // I2C data line (bidirectional)
 );
 
-    wire            clk_1MHz;
-    wire            done_write;
-    wire [7:0]      data;
-    wire            cmd_data;
-    wire            ena_write;
-    reg [127:0]     row1;
-    reg [127:0]     row2;
+    // Internal signals
+    wire            clk_1MHz;           // 1 MHz clock for I2C and LCD timing
+    wire            done_write;         // Write done flag from I2C module
+    wire [7:0]      data;               // Data to write to LCD
+    wire            cmd_data;           // Command/data flag (0 = command, 1 = data)
+    wire            ena_write;          // Enable write flag
+    reg  [127:0]    row1;               // LCD row 1 data (16 characters)
+    reg  [127:0]    row2;               // LCD row 2 data (16 characters)
 
-    // Kiểm tra giá trị hợp lệ, tránh lỗi hiển thị
-    wire [15:0] hr_safe   = (heart_rate > 999) ? 999 : heart_rate;
-    wire [7:0]  spo2_safe = (spo2 > 99) ? 99 : spo2;
+    // Convert temperature and humidity to ASCII for display
+    wire [7:0] temp_tens, temp_units, humi_tens, humi_units;
+    assign temp_tens = (temperature / 10) + "0";  // Tens digit of temperature
+    assign temp_units = (temperature % 10) + "0"; // Units digit of temperature
+    assign humi_tens = (humidity / 10) + "0";     // Tens digit of humidity
+    assign humi_units = (humidity % 10) + "0";    // Units digit of humidity
 
-    // Chuyển đổi số sang mã ASCII
-    wire [7:0] hr_hundreds = 8'd48 + ((hr_safe / 100) % 10);
-    wire [7:0] hr_tens     = 8'd48 + ((hr_safe / 10) % 10);
-    wire [7:0] hr_units    = 8'd48 + (hr_safe % 10);
-    wire [7:0] spo2_tens   = 8'd48 + ((spo2_safe / 10) % 10);
-    wire [7:0] spo2_units  = 8'd48 + (spo2_safe % 10);
+    // Generate 1 MHz clock from the main clock
+    clk_divider clk_1MHz_gen(
+        .clk        (clk),             // Input clock
+        .clk_1MHz   (clk_1MHz)         // Output clock (1 MHz)
+    );
 
-    // Cập nhật giá trị row1, row2 mỗi khi có xung clk_1MHz hoặc reset
+    // Update LCD rows with temperature and humidity data (exactly 16 characters)
     always @(posedge clk_1MHz or negedge rst_n) begin
         if (!rst_n) begin
-            row1 <= "HR:   --- BPM   "; // Giá trị mặc định khi reset
-            row2 <= "SpO2: --%       ";
+            row1 <= "Temp: -- C      "; // 16 characters
+            row2 <= "Humi: -- %      "; // 16 characters
         end else begin
-            row1 <= { "HR: ", hr_hundreds, hr_tens, hr_units, " BPM     " };
-            row2 <= { "SpO2: ", spo2_tens, spo2_units, "%       " };
+            row1 <= { "Temp: ", temp_tens, temp_units, " C      " }; // 16 characters
+            row2 <= { "Humi: ", humi_tens, humi_units, "%       " };  // 16 characters
         end
     end
 
-    // Bộ chia clock để tạo xung 1MHz
-    clk_divider clk_1MHz_gen(
-        .clk        (clk),
-        .clk_1MHz   (clk_1MHz)
-    );
-
-    // Module hiển thị LCD
+    // LCD display module
     lcd_display lcd_display_inst(
-        .clk_1MHz   (clk_1MHz),
-        .rst_n      (rst_n),
-        .ena        (1'b1),
-        .done_write (done_write),
-        .row1       (row1),
-        .row2       (row2),
-        .data       (data),
-        .cmd_data   (cmd_data),
-        .ena_write  (ena_write)
+        .clk_1MHz   (clk_1MHz),         // 1 MHz clock
+        .rst_n      (rst_n),            // Active low reset
+        .ena        (1'b1),             // Always enabled
+        .done_write (done_write),       // Write done flag from I2C
+        .row1       (row1),             // Row 1 data
+        .row2       (row2),             // Row 2 data
+        .data       (data),             // Data to write to LCD
+        .cmd_data   (cmd_data),         // Command/data flag
+        .ena_write  (ena_write)         // Enable write flag
     );
 
-    // Module ghi dữ liệu I2C ra LCD
+    // LCD command and data writing module
     lcd_write_cmd_data lcd_write_cmd_data_inst(
-        .clk_1MHz   (clk_1MHz),
-        .rst_n      (rst_n),
-        .data       (data),
-        .cmd_data   (cmd_data),
-        .ena        (ena_write),
-        .i2c_addr   (7'h27),
-        .sda        (sda),
-        .scl        (scl),
-        .done       (done_write)
+        .clk_1MHz   (clk_1MHz),         // 1 MHz clock
+        .rst_n      (rst_n),            // Active low reset
+        .data       (data),             // Data to write
+        .cmd_data   (cmd_data),         // Command/data flag
+        .ena        (ena_write),        // Enable write flag
+        .i2c_addr   (7'h27),            // I2C address of the LCD
+        .sda        (sda),              // I2C data line
+        .scl        (scl),              // I2C clock line
+        .done       (done_write)        // Write done flag
     );
 
 endmodule

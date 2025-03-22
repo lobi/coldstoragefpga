@@ -48,6 +48,10 @@ module uart_string(
   // Sending logic - TX Handler
   reg STATE_STR;
   always @(posedge clk_100Mhz or negedge rst_n) begin
+    /*
+      Handle the state machine for sending the string of ASCII characters every 1 second via UART
+      You should control the SFM with 2 different clock domains: 100MHz and baud rate 9600
+    */
     if (!rst_n) begin
       // Reset all states and signals
       tx_msg[0] <= 8'h53; // ASCII 'S'
@@ -75,7 +79,7 @@ module uart_string(
         end
         1: begin
           // Update sensor data at the start of transmission
-          if (tx_index == 0) begin
+          if (tx_index == 0 && !tx_busy) begin
             tx_msg[2] <= temperature / 10 + 8'h30;
             tx_msg[3] <= temperature % 10 + 8'h30;
             tx_msg[4] <= humidity / 10 + 8'h30;
@@ -84,15 +88,15 @@ module uart_string(
 
           // Send one character at a time
           if (!tx_busy && !send_start) begin
-            tx_data <= tx_msg[tx_index];  // Load the current character
-            send_start <= 1;              // Start UART transmission
-          end else if (tx_done) begin
-            send_start <= 0;              // Clear send_start after transmission
+            tx_data <= tx_msg[tx_index]; // Load the current character
+            send_start <= 1;            // Start UART transmission
+          end else if (!tx_busy && send_start) begin
+            send_start <= 0;            // Clear send_start after transmission
             if (tx_index < 6) begin
-              tx_index <= tx_index + 1;   // Move to the next character
+              tx_index <= tx_index + 1; // Move to the next character
             end else begin
-              tx_index <= 0;              // Reset index after all characters are sent
-              STATE_STR <= 0;             // Transition back to idle state
+              tx_index <= 0;            // Reset index after all characters are sent
+              STATE_STR <= 0;           // Transition back to idle state
             end
           end
         end
@@ -105,7 +109,7 @@ module uart_string(
   */
   reg [7:0] rx_msg [0:4]; // Buffer for received 5 characters
   reg [3:0] rx_index;  // Index for 4 characters
-  wire [7:0] data_rx;
+  wire [7:0] rx_data;
   reg led_1_reg, led_2_reg;
   assign led_1 = led_1_reg;
   assign led_2 = led_2_reg;
@@ -119,22 +123,55 @@ module uart_string(
       rx_msg[2] <= 8'h30; // ASCII '0'
       rx_msg[3] <= 8'h30; // ASCII '0'
       rx_msg[4] <= 8'h0A; // ASCII '\n'
-    end else if (rx_done && !rx_busy) begin
-      if (rx_index == 4) begin
-        rx_index <= 0; // Reset index after receiving all characters
-        // let proceed logic base on rx_msg
-        
-        // Control LEDs based on received ASCII values
-        led_1_reg <= (rx_msg[2] != 8'h30); // Turn on if not '0'
-        led_2_reg <= (rx_msg[3] != 8'h30); // Turn on if not '0'
 
-      end else begin
-        rx_msg[rx_index] <= data_rx;
-        rx_index <= rx_index + 1;
+      led_2_reg <= 1'b1;
+      led_1_reg <= 1'b1;
+    end else begin
+      // if not busy and done receiving a character
+      if (!rx_busy && rx_done) begin
+        // ok, you have just received a character
+        // let store it in the buffer
+        rx_msg[rx_index] <= rx_data;
+
+        // check if exceeds the buffer size:
+        rx_index <= (rx_index < 4) ? rx_index + 1 : 0; // Increment or reset buffer index
+
+        // check if it is a newline character (final character)
+        if (rx_data == 8'h0A) begin
+          rx_index <= 0;
+
+          // done a string. e.g.: L:01\n
+          // let control the LEDs
+          if (rx_msg[0] == 8'h4C) begin // Check for 'L' (led)
+            led_1_reg <= rx_msg[2] == 8'h31 ? 1'b1 : 1'b0;
+            led_2_reg <= rx_msg[3] == 8'h31 ? 1'b1 : 1'b0;
+          end
+        end
+      end else if (rx_done) begin
+        led_2_reg <= 1'b0;
+        led_1_reg <= 1'b0;
       end
     end
   end
 
+  uart_tx uart_tx_inst(
+    .clk(clk_100Mhz),
+    .rst_n(rst_n),
+    .tx_start(send_start),
+    .tx_data(tx_data),
+    .tx(tx),
+    .tx_busy(tx_busy)
+  );
+
+  uart_rx uart_rx_inst (
+    .clk(clk_100Mhz),
+    .rst_n(rst_n),
+    .rx(rx),
+    .data_out(rx_data),
+    .rx_busy(rx_busy),
+    .done(rx_done)
+  );
+  /*
   TxUnit Transmitter(
     //  Inputs
     .reset_n(rst_n),
@@ -149,7 +186,7 @@ module uart_string(
     .active_flag(tx_busy),
     .done_flag(tx_done)
   );
-  
+
   RxUnit Reciever(
     //  Inputs
     .reset_n(rst_n),
@@ -159,10 +196,11 @@ module uart_string(
     .data_tx(rx),
 
     //  Outputs
-    .data_out(data_rx),
+    .data_out(rx_data),
     .error_flag(),
     .active_flag(rx_busy),
     .done_flag(rx_done)
   );
+  */
 
 endmodule

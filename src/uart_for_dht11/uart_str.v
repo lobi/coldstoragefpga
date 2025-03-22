@@ -1,7 +1,7 @@
 /*
   This module is used to send/receive string of ascii characters to/from the UART module
   - TX: The ascii string is formatted as follows: S:[temperature_high][temperature_low][humidity_high][humidity_low]\n
-  - Rx: LEDs controlling format: L:[ascii_led_1][ascii_led_2]\n. e.g.: L:01\n (LED 1 ON, LED 2 OFF)
+  - RX: LEDs controlling format: L[ascii_led_1]:[ascii_led_2]\n. e.g.: L1:0\n (LED 1 ON, LED 2 OFF)
 */
 module uart_string(
   input wire clk_100Mhz,
@@ -13,8 +13,8 @@ module uart_string(
   input wire rx,
   output wire tx,
 
-  output wire led_1,
-  output wire led_2
+  output wire led_fan,
+  output wire led_hum
 );
 
   localparam [1:0] parity_type = 2'b01; // ODD parity
@@ -106,51 +106,71 @@ module uart_string(
 
   /*
   Rx Handler
+  Retrieve the ASCII characters from the UART module and control the LEDs based on the received values
+  Format: L[ascii_led_1]:[ascii_led_2]\n
+  E.g.: L1:0\n (LED 1 ON, LED 2 OFF)
+  Because we are working on 2 different clock domains, the delimiter (:) is necessary to indentify correct state in SFM synchronization
   */
-  reg [7:0] rx_msg [0:4]; // Buffer for received 5 characters
-  reg [3:0] rx_index;  // Index for 4 characters
   wire [7:0] rx_data;
-  reg led_1_reg, led_2_reg;
-  assign led_1 = led_1_reg;
-  assign led_2 = led_2_reg;
+  reg led_fan_reg, led_hum_reg;
+  assign led_fan = led_fan_reg;
+  assign led_hum = led_hum_reg;
   wire rx_busy;
+  reg [5:0] RX_STATE;
+  reg [7:0] ascii_fan, ascii_hum;
   always @(posedge clk_100Mhz or negedge rst_n) begin
     if (!rst_n) begin
-      rx_index <= 0;
-      
-      rx_msg[0] <= 8'h4C; // ASCII 'L'
-      rx_msg[1] <= 8'h3A; // ASCII ':'
-      rx_msg[2] <= 8'h30; // ASCII '0'
-      rx_msg[3] <= 8'h30; // ASCII '0'
-      rx_msg[4] <= 8'h0A; // ASCII '\n'
+      // Reset all states and signals
+      ascii_fan <= 8'h30; // Default ASCII '0'
+      ascii_hum <= 8'h30; // Default ASCII '0'
+      RX_STATE <= 0;      // Reset FSM state
 
-      led_2_reg <= 1'b1;
-      led_1_reg <= 1'b1;
-    end else begin
-      // if not busy and done receiving a character
-      if (!rx_busy && rx_done) begin
-        // ok, you have just received a character
-        // let store it in the buffer
-        rx_msg[rx_index] <= rx_data;
-
-        // check if exceeds the buffer size:
-        rx_index <= (rx_index < 4) ? rx_index + 1 : 0; // Increment or reset buffer index
-
-        // check if it is a newline character (final character)
-        if (rx_data == 8'h0A) begin
-          rx_index <= 0;
-
-          // done a string. e.g.: L:01\n
-          // let control the LEDs
-          if (rx_msg[0] == 8'h4C) begin // Check for 'L' (led)
-            led_1_reg <= rx_msg[2] == 8'h31 ? 1'b1 : 1'b0;
-            led_2_reg <= rx_msg[3] == 8'h31 ? 1'b1 : 1'b0;
+      led_fan_reg <= 1'b0; // Turn on fan LED
+      led_hum_reg <= 1'b0; // Turn on humidity LED
+    end else if (!rx_busy && rx_done) begin
+      // If not busy and a character is received
+      case (RX_STATE)
+        0: begin
+          // Check for 'L' (LED control)
+          if (rx_data == 8'h4C) begin // ASCII 'L'
+            RX_STATE <= 1;
+          end else begin
+            RX_STATE <= 0; // Stay in idle state if invalid
           end
         end
-      end else if (rx_done) begin
-        led_2_reg <= 1'b0;
-        led_1_reg <= 1'b0;
-      end
+        1: begin
+          // Check for fan control value (ASCII digit). it should be 0 or 1
+          if (rx_data == 8'h30 || rx_data == 8'h31) begin // ASCII '0' or '1'
+            ascii_fan <= rx_data; // Store fan control value
+            RX_STATE <= 2;
+          end
+          // led_fan_reg <= 1; // test
+        end
+        2: begin
+          // Check for ':' (separator)
+          if (rx_data == 8'h3A) begin // ASCII ':'
+            RX_STATE <= 3;
+          end
+          // led_hum_reg <= 1; // test
+        end
+        3: begin
+          // Check for humidity control value (ASCII digit). it should be 0 or 1
+          if (rx_data == 8'h30 || rx_data == 8'h31) begin // ASCII '0' or '1'
+            ascii_hum <= rx_data; // Store humidity control value
+            RX_STATE <= 4;
+          end
+          // led_fan_reg <= 1; // test
+        end
+        4: begin
+          // Check for newline character ('\n') or * character
+          if (rx_data == 8'h0A || rx_data == 8'h2A) begin // ASCII '\n' or '*'
+            // Update LED states based on received values
+            led_fan_reg <= (ascii_fan != 8'h30); // Turn on if not '0'
+            led_hum_reg <= (ascii_hum != 8'h30); // Turn on if not '0'
+            RX_STATE <= 0; // Reset FSM to idle state
+          end
+        end
+      endcase
     end
   end
 
@@ -171,36 +191,4 @@ module uart_string(
     .rx_busy(rx_busy),
     .done(rx_done)
   );
-  /*
-  TxUnit Transmitter(
-    //  Inputs
-    .reset_n(rst_n),
-    .send(send_start),
-    .clock(clk_100Mhz),
-    .parity_type(parity_type),
-    .baud_rate(baud_rate),
-    .data_in(tx_data),
-
-    //  Outputs
-    .data_tx(tx),
-    .active_flag(tx_busy),
-    .done_flag(tx_done)
-  );
-
-  RxUnit Reciever(
-    //  Inputs
-    .reset_n(rst_n),
-    .clock(clk_100Mhz),
-    .parity_type(parity_type),
-    .baud_rate(baud_rate),
-    .data_tx(rx),
-
-    //  Outputs
-    .data_out(rx_data),
-    .error_flag(),
-    .active_flag(rx_busy),
-    .done_flag(rx_done)
-  );
-  */
-
 endmodule

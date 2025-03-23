@@ -82,8 +82,11 @@ module logic_controller(
 
       if (tick) begin
         //lcd_row1 <= { "RX:", chr_cmd, chr_val0, chr_val1, "          " }; // 16 characters
-        update_thresholds();
-        update_leds();
+        if (rx_msg_done) begin
+          update_thresholds();
+          update_leds();
+        end
+
         update_lcd();
 
         lcd_en <= 1'b0;

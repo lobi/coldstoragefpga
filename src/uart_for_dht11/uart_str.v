@@ -13,12 +13,25 @@ module uart_string(
   input wire rx,
   output wire tx,
 
+  // Threshold values for temperature and humidity.
+  // These settings retrieved from Thingsboard MQTT via ESP8266 (UART)
+  output reg [6:0] max_temp,
+  output reg [6:0] min_temp,
+  output reg [6:0] max_hum,
+  output reg [6:0] min_hum,
+  
+  // RX String message
+  // Format: [char_command][char_value1][char_value2] 
+  // Example: L10 (L: LED; 1: led_fan ON, 0: led_hum OFF)
+  //output reg [6:0] rx_msg [0:2], // 3 characters
+  output reg       rx_msg_done,  // RX done flag
+
   output wire led_fan,
   output wire led_hum
 );
 
-  localparam [1:0] parity_type = 2'b01; // ODD parity
-  localparam [1:0] baud_rate = 2'b10;   // 9600 baud
+  // localparam [1:0] parity_type = 2'b01; // ODD parity
+  // localparam [1:0] baud_rate = 2'b10;   // 9600 baud
   // SEND_INTERVAL = Clock frequency (100 MHz) * Time (1 second) = 100,000,000 cycles
   localparam SEND_INTERVAL = 100_000_000; // 1 second
 
@@ -46,7 +59,7 @@ module uart_string(
   end
 
   // Sending logic - TX Handler
-  reg STATE_STR;
+  reg TX_STATE;
   always @(posedge clk_100Mhz or negedge rst_n) begin
     /*
       Handle the state machine for sending the string of ASCII characters every 1 second via UART
@@ -65,14 +78,14 @@ module uart_string(
       tx_index <= 0;
       send_start <= 0;
       timer_count <= 0;
-      STATE_STR <= 0;
+      TX_STATE <= 0;
     end else begin
-      case (STATE_STR)
+      case (TX_STATE)
         0: begin
           // Wait for 1-second interval
           if (timer_count == SEND_INTERVAL) begin
             timer_count <= 0;
-            STATE_STR <= 1; // Transition to sending state
+            TX_STATE <= 1; // Transition to sending state
           end else begin
             timer_count <= timer_count + 1;
           end
@@ -96,7 +109,7 @@ module uart_string(
               tx_index <= tx_index + 1; // Move to the next character
             end else begin
               tx_index <= 0;            // Reset index after all characters are sent
-              STATE_STR <= 0;           // Transition back to idle state
+              TX_STATE <= 0;           // Transition back to idle state
             end
           end
         end
@@ -118,12 +131,15 @@ module uart_string(
   wire rx_busy;
   reg [5:0] RX_STATE;
   reg [7:0] ascii_fan, ascii_hum;
+  reg [7:0] chr_0, chr_1, chr_2;
+  reg [7:0] chr_cmd, chr_val0, chr_val1;
   always @(posedge clk_100Mhz or negedge rst_n) begin
     if (!rst_n) begin
       // Reset all states and signals
       ascii_fan <= 8'h30; // Default ASCII '0'
       ascii_hum <= 8'h30; // Default ASCII '0'
       RX_STATE <= 0;      // Reset FSM state
+      rx_msg_done <= 0;   // Reset RX done flag
 
       led_fan_reg <= 1'b0; // Turn on fan LED
       led_hum_reg <= 1'b0; // Turn on humidity LED
@@ -131,9 +147,12 @@ module uart_string(
       // If not busy and a character is received
       case (RX_STATE)
         0: begin
-          // Check for 'L' (LED control)
-          if (rx_data == 8'h4C) begin // ASCII 'L'
+          // Check first char, it could be 'A', 'B', 'C', 'D' or 'L' (ASCII)
+          if (rx_data == 8'h41 || rx_data == 8'h42 || rx_data == 8'h43
+              || rx_data == 8'h44 || rx_data == 8'h4C) begin
             RX_STATE <= 1;
+            chr_cmd <= rx_data;
+            rx_msg_done <= 0;
           end else begin
             RX_STATE <= 0; // Stay in idle state if invalid
           end
@@ -143,6 +162,7 @@ module uart_string(
           if (rx_data == 8'h30 || rx_data == 8'h31) begin // ASCII '0' or '1'
             ascii_fan <= rx_data; // Store fan control value
             RX_STATE <= 2;
+            chr_val0 <= rx_data;
           end
           // led_fan_reg <= 1; // test
         end
@@ -158,16 +178,32 @@ module uart_string(
           if (rx_data == 8'h30 || rx_data == 8'h31) begin // ASCII '0' or '1'
             ascii_hum <= rx_data; // Store humidity control value
             RX_STATE <= 4;
+            chr_val1 <= rx_data;
           end
           // led_fan_reg <= 1; // test
         end
         4: begin
           // Check for newline character ('\n') or * character
           if (rx_data == 8'h0A || rx_data == 8'h2A) begin // ASCII '\n' or '*'
-            // Update LED states based on received values
-            led_fan_reg <= (ascii_fan != 8'h30); // Turn on if not '0'
-            led_hum_reg <= (ascii_hum != 8'h30); // Turn on if not '0'
-            RX_STATE <= 0; // Reset FSM to idle state
+            if (chr_cmd == 8'h4C) begin
+              // Update LED states based on received values
+              led_fan_reg <= (chr_val0 != 8'h30); // Turn on if not '0'
+              led_hum_reg <= (chr_val1 != 8'h30); // Turn on if not '0'
+            end else if (chr_cmd == 8'h41) begin // ASCII 'A'
+              // combine chr_val0 and chr_val1 to form a 2-digit number, then assign to max_temp
+              max_temp <= ((chr_val0 - 8'h30) * 10) + (chr_val1 - 8'h30);
+            end else if (chr_cmd == 8'h42) begin // ASCII 'B'
+              // combine chr_val0 and chr_val1 to form a 2-digit number, then assign to min_temp
+              min_temp <= ((chr_val0 - 8'h30) * 10) + (chr_val1 - 8'h30);
+            end else if (chr_cmd == 8'h43) begin // ASCII 'C'
+              // combine chr_val0 and chr_val1 to form a 2-digit number, then assign to max_hum
+              max_hum <= ((chr_val0 - 8'h30) * 10) + (chr_val1 - 8'h30);
+            end else if (chr_cmd == 8'h44) begin // ASCII 'D'
+              // combine chr_val0 and chr_val1 to form a 2-digit number, then assign to min_hum
+              min_hum <= ((chr_val0 - 8'h30) * 10) + (chr_val1 - 8'h30);
+            end
+
+            rx_msg_done <= 1;
           end
         end
       endcase

@@ -56,7 +56,7 @@ module top_coldstorage(
     .clk(clk),
     .rst_n(rst_n),
     .temperature(temperature_test),
-    .humidity(humidity_test),
+    .humidity(temperature_test),
     // .max_temp(max_temp),
     // .min_temp(min_temp),
     // .max_hum(max_hum),
@@ -85,7 +85,7 @@ module top_coldstorage(
     .clk_100Mhz(clk),
     .rst_n(rst_n),
     .temperature(temperature_test),
-    .humidity(humidity_test),
+    .humidity(temperature_test),
     .tx(tx),
     .rx(rx),
     // .max_temp(max_temp),
@@ -96,8 +96,6 @@ module top_coldstorage(
     .chr_val0(chr_val0),
     .chr_val1(chr_val1),
     .rx_msg_done(rx_msg_done)
-    // .led_fan(led_fan),
-    // .led_hum(led_hum)
   );
 
   lcd_16x2 lcd_16x2_inst(

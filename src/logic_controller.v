@@ -29,8 +29,6 @@ module logic_controller(
   localparam LCD_INTERVAL = 50_000_000; // 0.5 second
   integer lcd_interval_count = 0;
   reg [6:0] max_temp, min_temp, min_hum, max_hum; // 7 bits wide (enough for 0-100 integer) 
-  reg prev_received; // Previous received flag
-  wire rising_edge_rx = rx_msg_done && !prev_received; // Rising edge of RX flag
   
   reg [7:0] temp_tens, temp_units, humi_tens, humi_units;
   reg tick; // 1 second tick
@@ -52,7 +50,6 @@ module logic_controller(
       min_temp <= 0; // 0 degrees Celsius
       min_hum <= 10; // 10%
       max_hum <= 35; // 35%
-      prev_received <= 1'b0;
 
       // lcd
       lcd_row1 <= "  Cold Storage  ";
@@ -65,37 +62,34 @@ module logic_controller(
       if (lcd_interval_count == LCD_INTERVAL) begin
         initialed <= 1'b1;
         lcd_interval_count <= 0;
-        tick <= ~tick;
+        tick <= 1'b1;
         //lcd_en <= 1'b1;
       end else begin
         lcd_interval_count <= lcd_interval_count + 1;
 
         //update_lcd(temperature, humidity);
         //lcd_en <= 1'b0;
+        tick <= 1'b0;
       end
 
-      if (rx_msg_done && !prev_received) begin
-        prev_received <= 1'b1;
-      end else begin
-        prev_received <= 1'b0;
-      end
-
-      if (rising_edge_rx) begin
-        lcd_row1 <= { "RX:", chr_cmd, chr_val0, chr_val1, "          " }; // 16 characters
-        update_thresholds();
-        update_leds();
-        lcd_en <= 1'b0;
-        lcd_en <= 1'b1;
-      end
+      // if (rising_edge_rx) begin
+      //   lcd_row1 <= { "RX:", chr_cmd, chr_val0, chr_val1, "          " }; // 16 characters
+      //   update_thresholds();
+      //   update_leds();
+      //   lcd_en <= 1'b0;
+      //   lcd_en <= 1'b1;
+      // end
 
       if (tick) begin
-        if (!rising_edge_rx) begin
-          update_lcd();
-        end
+        //lcd_row1 <= { "RX:", chr_cmd, chr_val0, chr_val1, "          " }; // 16 characters
+        update_thresholds();
+        update_leds();
+        update_lcd();
+
         lcd_en <= 1'b0;
         lcd_en <= 1'b1;
       end else begin
-        lcd_en <= 1'b0; // Disable LCD
+        lcd_en <= 1'b0;
       end
 
       // if (!initialed) begin
@@ -107,7 +101,7 @@ module logic_controller(
   task update_thresholds;
     begin
       // data from uart: chr_cmd, chr_val0, chr_val1
-      if (chr_cmd == 8'h4C) begin
+      if (chr_cmd == 8'h4C) begin // ASCII 'L'
         // Update LED states based on received values
         led_fan <= (chr_val0 != 8'h30); // Turn on if not '0'
         led_hum <= (chr_val1 != 8'h30); // Turn on if not '0'

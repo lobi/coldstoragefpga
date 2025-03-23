@@ -1,7 +1,13 @@
 /*
   This module is used to send/receive string of ascii characters to/from the UART module
   - TX: The ascii string is formatted as follows: S:[temperature_high][temperature_low][humidity_high][humidity_low]\n
-  - RX: LEDs controlling format: L[ascii_led_1]:[ascii_led_2]\n. e.g.: L1:0\n (LED 1 ON, LED 2 OFF)
+  - RX: Handle the received ascii string of 5 characters
+      Format: [char_command][char_value1]:[char_value2]\n
+      Example: L1:0\n (L: LED; 1: led_fan ON, 0: led_hum OFF)
+      Example: A2:5\n (A: Max Temperature; 25: 25 degrees Celsius)
+      Example: B1:0\n (B: Min Temperature; 10: 10 degrees Celsius)
+      Example: C5:0\n (C: Max Humidity; 50: 50%)
+      Example: D2:0\n (D: Min Humidity; 20: 20%)
 */
 module uart_string(
   input wire clk_100Mhz,
@@ -15,19 +21,22 @@ module uart_string(
 
   // Threshold values for temperature and humidity.
   // These settings retrieved from Thingsboard MQTT via ESP8266 (UART)
-  output reg [6:0] max_temp,
-  output reg [6:0] min_temp,
-  output reg [6:0] max_hum,
-  output reg [6:0] min_hum,
+  // output reg [6:0] max_temp,
+  // output reg [6:0] min_temp,
+  // output reg [6:0] max_hum,
+  // output reg [6:0] min_hum,
   
   // RX String message
   // Format: [char_command][char_value1][char_value2] 
   // Example: L10 (L: LED; 1: led_fan ON, 0: led_hum OFF)
   //output reg [6:0] rx_msg [0:2], // 3 characters
-  output reg       rx_msg_done,  // RX done flag
+  output reg [7:0] chr_cmd,
+  output reg [7:0] chr_val0,
+  output reg [7:0] chr_val1,
+  output reg       rx_msg_done  // RX done flag
 
-  output wire led_fan,
-  output wire led_hum
+  // output wire led_fan,
+  // output wire led_hum
 );
 
   // localparam [1:0] parity_type = 2'b01; // ODD parity
@@ -125,24 +134,20 @@ module uart_string(
   Because we are working on 2 different clock domains, the delimiter (:) is necessary to indentify correct state in SFM synchronization
   */
   wire [7:0] rx_data;
-  reg led_fan_reg, led_hum_reg;
-  assign led_fan = led_fan_reg;
-  assign led_hum = led_hum_reg;
+  // reg led_fan_reg, led_hum_reg;
+  // assign led_fan = led_fan_reg;
+  // assign led_hum = led_hum_reg;
   wire rx_busy;
   reg [5:0] RX_STATE;
-  reg [7:0] ascii_fan, ascii_hum;
-  reg [7:0] chr_0, chr_1, chr_2;
-  reg [7:0] chr_cmd, chr_val0, chr_val1;
+  //reg [7:0] chr_cmd, chr_val0, chr_val1;
   always @(posedge clk_100Mhz or negedge rst_n) begin
     if (!rst_n) begin
       // Reset all states and signals
-      ascii_fan <= 8'h30; // Default ASCII '0'
-      ascii_hum <= 8'h30; // Default ASCII '0'
       RX_STATE <= 0;      // Reset FSM state
-      rx_msg_done <= 0;   // Reset RX done flag
+      rx_msg_done <= 1'b0;   // Reset RX done flag
 
-      led_fan_reg <= 1'b0; // Turn on fan LED
-      led_hum_reg <= 1'b0; // Turn on humidity LED
+      // led_fan_reg <= 1'b0; // Turn on fan LED
+      // led_hum_reg <= 1'b0; // Turn on humidity LED
     end else if (!rx_busy && rx_done) begin
       // If not busy and a character is received
       case (RX_STATE)
@@ -152,7 +157,7 @@ module uart_string(
               || rx_data == 8'h44 || rx_data == 8'h4C) begin
             RX_STATE <= 1;
             chr_cmd <= rx_data;
-            rx_msg_done <= 0;
+            rx_msg_done <= 1'b0;
           end else begin
             RX_STATE <= 0; // Stay in idle state if invalid
           end
@@ -160,7 +165,6 @@ module uart_string(
         1: begin
           // Check for fan control value (ASCII digit). it should be 0 or 1
           if (rx_data == 8'h30 || rx_data == 8'h31) begin // ASCII '0' or '1'
-            ascii_fan <= rx_data; // Store fan control value
             RX_STATE <= 2;
             chr_val0 <= rx_data;
           end
@@ -176,7 +180,6 @@ module uart_string(
         3: begin
           // Check for humidity control value (ASCII digit). it should be 0 or 1
           if (rx_data == 8'h30 || rx_data == 8'h31) begin // ASCII '0' or '1'
-            ascii_hum <= rx_data; // Store humidity control value
             RX_STATE <= 4;
             chr_val1 <= rx_data;
           end
@@ -185,6 +188,7 @@ module uart_string(
         4: begin
           // Check for newline character ('\n') or * character
           if (rx_data == 8'h0A || rx_data == 8'h2A) begin // ASCII '\n' or '*'
+            /*
             if (chr_cmd == 8'h4C) begin
               // Update LED states based on received values
               led_fan_reg <= (chr_val0 != 8'h30); // Turn on if not '0'
@@ -202,8 +206,8 @@ module uart_string(
               // combine chr_val0 and chr_val1 to form a 2-digit number, then assign to min_hum
               min_hum <= ((chr_val0 - 8'h30) * 10) + (chr_val1 - 8'h30);
             end
-
-            rx_msg_done <= 1;
+            */
+            rx_msg_done <= 1'b1;
           end
         end
       endcase

@@ -89,3 +89,7 @@
 !*.elf
 !*.bmm
 !*.xmp
+#########
+# Documentation
+#########
+!docs/*

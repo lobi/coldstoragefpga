@@ -3,6 +3,8 @@ module dht11_reader (
   input wire en,        // Enable signal to start reading DHT11
   input wire clk,       // System clock (100MHz)
   inout wire dht_data,  // Bi-directional data line for DHT11
+  output reg led1_test, // Test LED 1
+  output reg led2_test, // Test LED 2
   output reg [7:0] humidity,
   output reg [7:0] temperature,
   output reg data_ready
@@ -25,12 +27,19 @@ module dht11_reader (
       humidity <= 0;
       temperature <= 0;
       data_ready <= 0;
+
+      led1_test <= 1'b0;
+      //led2_test <= 1'b0;
     end else if (en) begin
+      //led2_test <= 1'b1;
       case (state)
         0: begin
           counter <= 0;
           data_ready <= 0;
           state <= 1;
+          led1_test <= 1'b0;
+          humidity <= 8'b0;
+          temperature <= 8'b0;
         end
 
         1: begin
@@ -45,7 +54,7 @@ module dht11_reader (
           counter <= counter + 1;
           if (counter >= 40) begin // 20-40 µs delay
             state <= 3;
-            counter <= 0;
+            counter <= 0;            
           end
         end
 
@@ -85,8 +94,9 @@ module dht11_reader (
         6: begin
           if (dht_data_reg[39:32] + dht_data_reg[31:24] + dht_data_reg[23:16] + dht_data_reg[15:8] == dht_data_reg[7:0]) begin
             humidity <= dht_data_reg[39:32];
-            temperature <= dht_data_reg[23:16];
+            temperature <= dht_data_reg[23:16] + 2; // add more 2 degrees to the temperature
             data_ready <= 1;
+            led1_test <= 1'b1;
           end else begin
             data_ready <= 0;
           end
@@ -99,6 +109,7 @@ module dht11_reader (
       dht_data_reg <= 0;
       bit_count <= 0;
       data_ready <= 0;
+      //led2_test <= 1'b0;
     end
   end
 endmodule

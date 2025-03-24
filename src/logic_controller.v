@@ -4,6 +4,8 @@ module logic_controller(
 
   input   wire  [7: 0]    temperature,
   input   wire  [7: 0]    humidity,
+  output  reg             dht_en,
+  input   wire            dht_data_ready,
 
   // Threshold values for temperature and humidity to control the cooling fan and humidifier
   // input   wire  [6:0]     max_temp, // [6:0] is 7 bits wide (enough for 0-100)
@@ -37,6 +39,7 @@ module logic_controller(
     // Initialize the LCD lines with 2 lines: 16 characters per line
     lcd_row1 = "  Cold Storage  ";
     lcd_row2 = "     Hello      ";
+    dht_en <= 1'b0;
   end
   reg initialed;
   always @(posedge clk or negedge rst_n) begin
@@ -50,6 +53,7 @@ module logic_controller(
       min_temp <= 0; // 0 degrees Celsius
       min_hum <= 10; // 10%
       max_hum <= 35; // 35%
+      dht_en <= 1'b0;
 
       // lcd
       lcd_row1 <= "  Cold Storage  ";
@@ -62,14 +66,28 @@ module logic_controller(
       if (lcd_interval_count == LCD_INTERVAL) begin
         initialed <= 1'b1;
         lcd_interval_count <= 0;
-        tick <= 1'b1;
+        tick <= ~tick;
         //lcd_en <= 1'b1;
+
+        if (tick) begin
+          // refresh sensor data
+          if (!dht_en ) begin
+            dht_en <= 1'b1;
+          end
+        end else begin
+          // reset dht_en
+          dht_en <= 1'b0;
+        end
       end else begin
         lcd_interval_count <= lcd_interval_count + 1;
 
         //update_lcd(temperature, humidity);
         //lcd_en <= 1'b0;
-        tick <= 1'b0;
+        //tick <= 1'b0;
+      end
+
+      if (dht_en && dht_data_ready) begin
+        dht_en <= 1'b0;
       end
 
       // if (rising_edge_rx) begin
@@ -145,10 +163,10 @@ module logic_controller(
   task update_lcd;
     begin
       // Convert temperature and humidity to ASCII for display
-      temp_tens <= (temperature / 10) + "0";  // Tens digit of temperature
-      temp_units <= (temperature % 10) + "0"; // Units digit of temperature
-      humi_tens <= (humidity / 10) + "0";   // Tens digit of humidity
-      humi_units <= (humidity % 10) + "0";  // Units digit of humidity
+      temp_tens <= (temperature / 10) + 8'h30;  // Tens digit of temperature
+      temp_units <= (temperature % 10) + 8'h30; // Units digit of temperature
+      humi_tens <= (humidity / 10) + 8'h30;   // Tens digit of humidity
+      humi_units <= (humidity % 10) + 8'h30;  // Units digit of humidity
 
       // Update LCD rows with temperature and humidity data (exactly 16 characters)
       if (temperature < 10) begin

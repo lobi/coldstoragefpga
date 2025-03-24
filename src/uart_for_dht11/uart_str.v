@@ -19,6 +19,10 @@ module uart_string(
   input wire rx,
   output wire tx,
 
+  // humidifer & cooling fan states
+  input wire fan_state,
+  input wire hum_state,
+
   // Threshold values for temperature and humidity.
   // These settings retrieved from Thingsboard MQTT via ESP8266 (UART)
   // output reg [6:0] max_temp,
@@ -53,7 +57,7 @@ module uart_string(
   wire tx_busy;
 
   // ASCII message to send
-  reg [6:0] tx_msg [0:7];
+  reg [6:0] tx_msg [0:6];
 
   integer temp;
 
@@ -64,7 +68,10 @@ module uart_string(
     tx_msg[3] = 8'h30; // ASCII '0'
     tx_msg[4] = 8'h30; // ASCII '0'
     tx_msg[5] = 8'h30; // ASCII '0'
-    tx_msg[6] = 8'h0A; // ASCII '\n'
+    tx_msg[6] = 8'h2F; // ASCII '/'
+    //tx_msg[6] = 8'h30; // ASCII '0'
+    //tx_msg[7] = 8'h30; // ASCII '0'
+    //tx_msg[8] = 8'h2F; // ASCII '\n'
   end
 
   // Sending logic - TX Handler
@@ -82,7 +89,10 @@ module uart_string(
       tx_msg[3] <= 8'h30; // ASCII '0'
       tx_msg[4] <= 8'h30; // ASCII '0'
       tx_msg[5] <= 8'h30; // ASCII '0'
-      tx_msg[6] <= 8'h0A; // ASCII '\n
+      tx_msg[6] <= 8'h2F; // ASCII '/'
+      // tx_msg[6] <= 8'h30; // ASCII '0'
+      // tx_msg[7] <= 8'h30; // ASCII '0'
+      //tx_msg[8] <= 8'h2F; // ASCII '/'
 
       tx_index <= 0;
       send_start <= 0;
@@ -106,20 +116,18 @@ module uart_string(
             tx_msg[3] <= temperature % 10 + 8'h30;
             tx_msg[4] <= humidity / 10 + 8'h30;
             tx_msg[5] <= humidity % 10 + 8'h30;
+            // tx_msg[6] <= fan_state ? 8'h31 : 8'h30; // ASCII '1' or '0'
+            // tx_msg[7] <= hum_state ? 8'h31 : 8'h30; // ASCII '1' or '0'
           end
 
           // Send one character at a time
           if (!tx_busy && !send_start) begin
             tx_data <= tx_msg[tx_index]; // Load the current character
             send_start <= 1;            // Start UART transmission
-          end else if (!tx_busy && send_start) begin
+          end else if (send_start && !tx_busy) begin
             send_start <= 0;            // Clear send_start after transmission
-            if (tx_index < 6) begin
-              tx_index <= tx_index + 1; // Move to the next character
-            end else begin
-              tx_index <= 0;            // Reset index after all characters are sent
-              TX_STATE <= 0;           // Transition back to idle state
-            end
+            tx_index <= (tx_index < 6) ? tx_index + 1 : 0; // Increment or reset index
+            TX_STATE <= (tx_index == 6) ? 0 : TX_STATE;    // Transition to idle if done
           end
         end
       endcase
@@ -186,27 +194,8 @@ module uart_string(
           // led_fan_reg <= 1; // test
         end
         4: begin
-          // Check for newline character ('\n') or * character
-          if (rx_data == 8'h0A || rx_data == 8'h2A) begin // ASCII '\n' or '*'
-            /*
-            if (chr_cmd == 8'h4C) begin
-              // Update LED states based on received values
-              led_fan_reg <= (chr_val0 != 8'h30); // Turn on if not '0'
-              led_hum_reg <= (chr_val1 != 8'h30); // Turn on if not '0'
-            end else if (chr_cmd == 8'h41) begin // ASCII 'A'
-              // combine chr_val0 and chr_val1 to form a 2-digit number, then assign to max_temp
-              max_temp <= ((chr_val0 - 8'h30) * 10) + (chr_val1 - 8'h30);
-            end else if (chr_cmd == 8'h42) begin // ASCII 'B'
-              // combine chr_val0 and chr_val1 to form a 2-digit number, then assign to min_temp
-              min_temp <= ((chr_val0 - 8'h30) * 10) + (chr_val1 - 8'h30);
-            end else if (chr_cmd == 8'h43) begin // ASCII 'C'
-              // combine chr_val0 and chr_val1 to form a 2-digit number, then assign to max_hum
-              max_hum <= ((chr_val0 - 8'h30) * 10) + (chr_val1 - 8'h30);
-            end else if (chr_cmd == 8'h44) begin // ASCII 'D'
-              // combine chr_val0 and chr_val1 to form a 2-digit number, then assign to min_hum
-              min_hum <= ((chr_val0 - 8'h30) * 10) + (chr_val1 - 8'h30);
-            end
-            */
+          // Check for newline character ('\n') or * or '/' character
+          if (rx_data == 8'h0A || rx_data == 8'h2A || rx_data == 8'h2F) begin
             rx_msg_done <= 1'b1;
           end
         end

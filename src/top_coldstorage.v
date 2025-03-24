@@ -39,8 +39,8 @@ module top_coldstorage(
   );
 
   // data test for temperature, humidity:
-  wire [7:0] temperature_test = 8'h19; // 25
-  wire [7:0] humidity_test = 8'h32; // 50
+  // wire [7:0] temperature_test = 8'h19; // 25
+  // wire [7:0] humidity_test = 8'h32; // 50
 
   // lcd 16x2
   wire [127:0] lcd_row1, lcd_row2;
@@ -55,8 +55,8 @@ module top_coldstorage(
   logic_controller logic_controller_inst(
     .clk(clk),
     .rst_n(rst_n),
-    .temperature(temperature_test),
-    .humidity(temperature_test),
+    .temperature(temperature),
+    .humidity(humidity),
     // .max_temp(max_temp),
     // .min_temp(min_temp),
     // .max_hum(max_hum),
@@ -84,10 +84,12 @@ module top_coldstorage(
   uart_string uart_string_inst(
     .clk_100Mhz(clk),
     .rst_n(rst_n),
-    .temperature(temperature_test),
-    .humidity(temperature_test),
+    .temperature(temperature),
+    .humidity(humidity),
     .tx(tx),
     .rx(rx),
+    .fan_state(led_fan),
+    .hum_state(led_hum),
     // .max_temp(max_temp),
     // .min_temp(min_temp),
     // .max_hum(max_hum),

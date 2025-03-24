@@ -35,7 +35,7 @@ Block Design:
 RTL - Schematic:
 ![RTL - Schematic](/docs/photos/RTL-Schematic--top-module.png "RTL - Schematic")
 
-RTL - Thingsboard:
+Thingsboard:
 ![Thingsboard](/docs/photos/Thingsboard-Dashboard.png "Thingsboard")
 
 # Software & Tools Used

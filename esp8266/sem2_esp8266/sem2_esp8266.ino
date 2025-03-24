@@ -381,8 +381,8 @@ void listen_on_uart() {
         Serial.println(". val: " + val);
       } else if (cmd == "S") {
         
-        String hum = val.substring(0, 2);
-        String temp = val.substring(2, 4);
+        String temp = val.substring(0, 2);
+        String hum = val.substring(2, 4);
         String temp_state = val.substring(4, 5) == "1" ? "true" : "false";
         String hum_state = val.substring(5, 6) == "1" ? "true" : "false";
         send_metrics(HUMIDITY_KEY, hum);

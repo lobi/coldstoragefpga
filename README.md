@@ -3,6 +3,7 @@ FPGA Project - Semester 2
 
 # Overview
 The **Cold Storage Control System** is designed to monitor and regulate **temperature** and **humidity** in a cold storage environment. It uses a **DHT11** sensor to track temperature and humidity levels and controls a *Cooling Fan* and *Humidifier Machine* accordingly. The system is powered by an **FPGA** board (Zuboard 1CG), which reads sensor data and manages the cooling and humidifying devices. Additionally, the FPGA communicates with an **ESP8266** module via UART to transmit data to *ThingsBoard.cloud* for **visualization** and **remote control**.
+![Cold Storage Control System](/docs/photos/full-system.jpg "Cold Storage Control System")
 
 # Features
 * **Real-time Monitoring**: Collects temperature and humidity data using the DHT11 sensor.
@@ -63,7 +64,7 @@ Thingsboard:
     * Zu 1CG FPGA's pins:
     ![Zub 1CG Pins](/docs/photos/DesignWrapper-IO-Ports.png "Zub 1CG Pins")
     * ESP8266 & full setup:
-    ![hardware configuration](/docs/photos/hardware_config.JPG "hardware configuration")
+    ![hardware configuration](/docs/photos/wiring.jpg "hardware configuration")
 
 Project Document Details
 https://docs.google.com/document/d/1OrEBO5JM59HGXvwQGIddRXkbY47BfjuRY3ZWswu3Bf0/edit?tab=t.0#heading=h.orjg5xpkupib

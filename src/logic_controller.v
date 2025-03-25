@@ -1,22 +1,19 @@
 module logic_controller(
-  input   wire            clk,       // main system clock
+  input   wire            clk,       // 1 MHz clock
   input   wire            rst_n,
 
+  // dht11 sensor
   input   wire  [7: 0]    temperature,
   input   wire  [7: 0]    humidity,
   output  reg             dht_en,
   input   wire            dht_data_ready,
 
-  // Threshold values for temperature and humidity to control the cooling fan and humidifier
-  // input   wire  [6:0]     max_temp, // [6:0] is 7 bits wide (enough for 0-100)
-  // input   wire  [6:0]     min_temp, // [6:0] is 7 bits wide (enough for 0-100)
-  // input   wire  [6:0]     max_hum,  // [6:0] is 7 bits wide (enough for 0-100)
-  // input   wire  [6:0]     min_hum,  // [6:0] is 7 bits wide (enough for 0-100)
+  // uart
   input   wire  [7:0]     chr_cmd,
   input   wire  [7:0]     chr_val0,
   input   wire  [7:8]     chr_val1,
   input   wire            rx_msg_done,
-  //output  reg             rx_msg_saved,
+  output   reg             en_tx,
 
   // LCD display
   output  reg             lcd_en,   // LCD enable signal
@@ -28,12 +25,12 @@ module logic_controller(
   output  reg             led_hum      // humidifier (1/0): on/off
 );
 
-  localparam LCD_INTERVAL = 50_000_000; // 0.5 second
+  localparam LCD_INTERVAL = 500_000; // 0.5 second for 1 MHz clock
   integer lcd_interval_count = 0;
   reg [6:0] max_temp, min_temp, min_hum, max_hum; // 7 bits wide (enough for 0-100 integer) 
   
   reg [7:0] temp_tens, temp_units, humi_tens, humi_units;
-  reg tick; // 1 second tick
+  reg tick; // 1 second tick - posedge
 
   initial begin
     // Initialize the LCD lines with 2 lines: 16 characters per line
@@ -74,52 +71,43 @@ module logic_controller(
           if (!dht_en ) begin
             dht_en <= 1'b1;
           end
+
+          // enable uart tx to send metrics
+          en_tx <= 1'b1;
+
+          // 
+          if (rx_msg_done) begin
+            
+
+            update_settings();
+            update_leds();
+          end
+
+          update_lcd();
+
+          //lcd_en <= 1'b0;
+          lcd_en <= 1'b1;
         end else begin
-          // reset dht_en
           dht_en <= 1'b0;
+          lcd_en <= 1'b0;
         end
       end else begin
         lcd_interval_count <= lcd_interval_count + 1;
-
-        //update_lcd(temperature, humidity);
-        //lcd_en <= 1'b0;
-        //tick <= 1'b0;
       end
 
+      // disable dht_en if data is done
       if (dht_en && dht_data_ready) begin
         dht_en <= 1'b0;
       end
 
-      // if (rising_edge_rx) begin
-      //   lcd_row1 <= { "RX:", chr_cmd, chr_val0, chr_val1, "          " }; // 16 characters
-      //   update_thresholds();
-      //   update_leds();
-      //   lcd_en <= 1'b0;
-      //   lcd_en <= 1'b1;
-      // end
-
-      if (tick) begin
-        //lcd_row1 <= { "RX:", chr_cmd, chr_val0, chr_val1, "          " }; // 16 characters
-        if (rx_msg_done) begin
-          update_thresholds();
-          update_leds();
-        end
-
-        update_lcd();
-
-        lcd_en <= 1'b0;
-        lcd_en <= 1'b1;
-      end else begin
-        lcd_en <= 1'b0;
+      // disable uart - stop sending metrics
+      if (en_tx && rx_msg_done) begin
+        en_tx <= 1'b0;
       end
-
-      // if (!initialed) begin
-      //   lcd_en <= 1'b1;
-      // end
     end
   end
 
-  task update_thresholds;
+  task update_settings;
     begin
       // data from uart: chr_cmd, chr_val0, chr_val1
       if (chr_cmd == 8'h4C) begin // ASCII 'L'

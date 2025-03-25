@@ -10,7 +10,7 @@
       Example: D2:0\n (D: Min Humidity; 20: 20%)
 */
 module uart_string(
-  input wire clk_100Mhz,
+  input wire clk_1Mhz,
   input wire rst_n,
 
   input wire [7: 0] temperature,//data_heart_rate,
@@ -18,6 +18,7 @@ module uart_string(
 
   input wire rx,
   output wire tx,
+  input wire en_tx,
 
   // humidifer & cooling fan states
   input wire fan_state,
@@ -45,8 +46,8 @@ module uart_string(
 
   // localparam [1:0] parity_type = 2'b01; // ODD parity
   // localparam [1:0] baud_rate = 2'b10;   // 9600 baud
-  // SEND_INTERVAL = Clock frequency (100 MHz) * Time (1 second) = 100,000,000 cycles
-  localparam SEND_INTERVAL = 100_000_000; // 1 second
+  // SEND_INTERVAL = Clock frequency (1 MHz) * Time (1 second) = 1,000,000 cycles
+  localparam SEND_INTERVAL = 1_000_000; // 1 second for 1MHz clock
 
   wire tx_done, rx_done;
 
@@ -76,7 +77,7 @@ module uart_string(
 
   // Sending logic - TX Handler
   reg TX_STATE;
-  always @(posedge clk_100Mhz or negedge rst_n) begin
+  always @(posedge clk_1Mhz or negedge rst_n) begin
     /*
       Handle the state machine for sending the string of ASCII characters every 1 second via UART
       You should control the SFM with 2 different clock domains: 100MHz and baud rate 9600
@@ -98,7 +99,7 @@ module uart_string(
       send_start <= 0;
       timer_count <= 0;
       TX_STATE <= 0;
-    end else begin
+    end else if (en_tx) begin
       case (TX_STATE)
         0: begin
           // Wait for 1-second interval
@@ -148,7 +149,7 @@ module uart_string(
   wire rx_busy;
   reg [5:0] RX_STATE;
   //reg [7:0] chr_cmd, chr_val0, chr_val1;
-  always @(posedge clk_100Mhz or negedge rst_n) begin
+  always @(posedge clk_1Mhz or negedge rst_n) begin
     if (!rst_n) begin
       // Reset all states and signals
       RX_STATE <= 0;      // Reset FSM state
@@ -204,7 +205,7 @@ module uart_string(
   end
 
   uart_tx uart_tx_inst(
-    .clk(clk_100Mhz),
+    .clk(clk_1Mhz),
     .rst_n(rst_n),
     .tx_start(send_start),
     .tx_data(tx_data),
@@ -213,7 +214,7 @@ module uart_string(
   );
 
   uart_rx uart_rx_inst (
-    .clk(clk_100Mhz),
+    .clk(clk_1Mhz),
     .rst_n(rst_n),
     .rx(rx),
     .data_out(rx_data),

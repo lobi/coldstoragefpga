@@ -333,12 +333,10 @@ void on_message(const char* topic, byte* payload, unsigned int length) {
 }
 
 void listen_on_uart() {
-  int buff_size = 70;
+  int buff_size = 7;
   char buff[buff_size];
   
   int i = 0; // buffer index
-
-  int incomingByte = 0;
   if (my_uart.available()) {
     Serial.print("\nReceiving from UART... ");
 

@@ -42,7 +42,7 @@ module top_coldstorage(
 
   // data test for temperature, humidity: 33 celcius, 10%
   // wire [7:0] temperature_test = 8'h21; // 33
-  // wire [7:0] humidity_test = 8'h0A; // 10
+  // wire [7:0] humidity_test = 8'h28; // 40
 
   // lcd 16x2
   wire [127:0] lcd_row1, lcd_row2;
@@ -53,26 +53,31 @@ module top_coldstorage(
   // uart
   // wire [6:0] max_temp, min_temp, max_hum, min_hum;
   wire [7:0] chr_cmd, chr_val0, chr_val1;
-  wire rx_msg_done;
+  wire rx_msg_done, en_tx;
 
   logic_controller logic_controller_inst(
-    .clk(clk),
+    .clk(clk_1MHz),
     .rst_n(rst_n),
+
+    // dht:
     .temperature(temperature),
     .humidity(humidity),
     .dht_en(dht_en),
     .dht_data_ready(dht_data_ready),
-    // .max_temp(max_temp),
-    // .min_temp(min_temp),
-    // .max_hum(max_hum),
-    // .min_hum(min_hum),
+
+    // uart:
     .chr_cmd(chr_cmd),
     .chr_val0(chr_val0),
     .chr_val1(chr_val1),
+    .en_tx(en_tx),
     .rx_msg_done(rx_msg_done),
+
+    // lcd:
     .lcd_en(lcd_en),
     .lcd_row1(lcd_row1),
     .lcd_row2(lcd_row2),
+
+    // led:
     .led_fan(led_fan),
     .led_hum(led_hum)
   );
@@ -90,18 +95,15 @@ module top_coldstorage(
   );
 
   uart_string uart_string_inst(
-    .clk_100Mhz(clk),
+    .clk_1Mhz(clk_1MHz),
     .rst_n(rst_n),
     .temperature(temperature),
     .humidity(humidity),
+    .en_tx(en_tx),
     .tx(tx),
     .rx(rx),
     .fan_state(led_fan),
     .hum_state(led_hum),
-    // .max_temp(max_temp),
-    // .min_temp(min_temp),
-    // .max_hum(max_hum),
-    // .min_hum(min_hum),
     .chr_cmd(chr_cmd),
     .chr_val0(chr_val0),
     .chr_val1(chr_val1),

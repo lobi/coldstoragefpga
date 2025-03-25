@@ -1,5 +1,5 @@
 module uart_tx(
-  input  wire clk,              // System clock
+  input  wire clk,              // System clock: 1MHz
   input  wire rst_n,            // Reset signal
   input  wire tx_start,         // Start transmission signal
   input  wire [7:0] tx_data,    // Data to be transmitted
@@ -7,7 +7,7 @@ module uart_tx(
   output reg tx_busy            // Transmission busy flag
 );
 
-  parameter CLK_FREQ = 100_000_000; // 5100 MHz clock
+  parameter CLK_FREQ = 1_000_000; // 1 MHz clock
   parameter BAUD_RATE = 9600;
   localparam BIT_PERIOD = CLK_FREQ / BAUD_RATE; // Clock cycles per bit
 

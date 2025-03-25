@@ -17,6 +17,8 @@ module top_coldstorage(
   input         rst_n,        // Reset active high
 
   inout         dht11_data,   // bi-directional data line for DHT11
+  output        led1_test,    // Test LED 1
+  output        led2_test,    // Test LED 2
 
   // led indicators
   output        led_fan,      // cooling fan (1/0): on/off
@@ -38,62 +40,70 @@ module top_coldstorage(
     .clk_1MHz(clk_1MHz)
   );
 
-  // data test for temperature, humidity:
-  // wire [7:0] temperature_test = 8'h19; // 25
-  // wire [7:0] humidity_test = 8'h32; // 50
+  // data test for temperature, humidity: 33 celcius, 10%
+  // wire [7:0] temperature_test = 8'h21; // 33
+  // wire [7:0] humidity_test = 8'h28; // 40
 
   // lcd 16x2
   wire [127:0] lcd_row1, lcd_row2;
   wire lcd_en;
   // sensor data
   wire [7:0] temperature, humidity;
+  wire dht_en, dht_data_ready;
   // uart
   // wire [6:0] max_temp, min_temp, max_hum, min_hum;
   wire [7:0] chr_cmd, chr_val0, chr_val1;
-  wire rx_msg_done;
+  wire rx_msg_done, en_tx;
 
   logic_controller logic_controller_inst(
-    .clk(clk),
+    .clk(clk_1MHz),
     .rst_n(rst_n),
+
+    // dht:
     .temperature(temperature),
     .humidity(humidity),
-    // .max_temp(max_temp),
-    // .min_temp(min_temp),
-    // .max_hum(max_hum),
-    // .min_hum(min_hum),
+    .dht_en(dht_en),
+    .dht_data_ready(dht_data_ready),
+
+    // uart:
     .chr_cmd(chr_cmd),
     .chr_val0(chr_val0),
     .chr_val1(chr_val1),
+    .en_tx(en_tx),
     .rx_msg_done(rx_msg_done),
+
+    // lcd:
     .lcd_en(lcd_en),
     .lcd_row1(lcd_row1),
     .lcd_row2(lcd_row2),
+
+    // led:
     .led_fan(led_fan),
     .led_hum(led_hum)
   );
 
   dht11_reader dht11_reader_inst(
-    .en(1'b1),
     .clk(clk),
+    .rst_n(rst_n),
+    .en(dht_en),
     .dht_data(dht11_data),
+    .led1_test(led1_test),
+    .led2_test(led2_test),
     .temperature(temperature),
     .humidity(humidity),
-    .data_ready()
+    .data_ready(dht_data_ready)
   );
 
   uart_string uart_string_inst(
-    .clk_100Mhz(clk),
+    .clk_1Mhz(clk_1MHz),
     .rst_n(rst_n),
     .temperature(temperature),
     .humidity(humidity),
+    .en_tx(en_tx),
     .tx(tx),
     .rx(rx),
     .fan_state(led_fan),
     .hum_state(led_hum),
-    // .max_temp(max_temp),
-    // .min_temp(min_temp),
-    // .max_hum(max_hum),
-    // .min_hum(min_hum),
     .chr_cmd(chr_cmd),
     .chr_val0(chr_val0),
     .chr_val1(chr_val1),

@@ -7,7 +7,7 @@ module uart_rx (
   output reg done             // Indicates a valid received byte
 );
 
-  parameter CLK_FREQ = 100_000_000;               // System clock frequency
+  parameter CLK_FREQ = 1_000_000;                 // System clock frequency
   parameter BAUD_RATE = 9600;
   localparam BIT_PERIOD = CLK_FREQ / BAUD_RATE;   // Clock cycles per bit
 

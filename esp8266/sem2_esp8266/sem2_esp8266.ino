@@ -333,27 +333,29 @@ void on_message(const char* topic, byte* payload, unsigned int length) {
 }
 
 void listen_on_uart() {
-  int buff_size = 7;
+  int buff_size = 10;
   char buff[buff_size];
   
-  int i = 0; // buffer index
   if (my_uart.available()) {
     Serial.print("\nReceiving from UART... ");
 
     // Receive all arrived chars.
     // Use my_uart.read() will faster than my_uart.readString() a lot, it will
     // reduce the issue loss message when transmit/receive multiple messages via UART
+    int i = 0; // buffer index
     while (my_uart.available() && i < buff_size)
     {
       buff[i] = my_uart.read();
       Serial.print(buff[i]);
-      i++;
+      
 
       // check if end of message
       if (buff[i] == '*' || buff[i] == '\n' || buff[i] == '/') {
         break;
       }
+      i++;
     }
+    Serial.println("Final buff: " + String(buff));
     Serial.println(". done!");
     String str_rx;
     
@@ -498,5 +500,5 @@ void loop() {
 
   // required when using MQTT
   client.loop();
-  delay(1500);
+  delay(100);
 }

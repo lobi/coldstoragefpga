@@ -13,6 +13,7 @@ module logic_controller(
   input   wire  [7:0]     chr_val0,
   input   wire  [7:8]     chr_val1,
   input   wire            rx_msg_done,
+  input   wire            tx_msg_done,
   output   reg             en_tx,
 
   // LCD display
@@ -61,35 +62,38 @@ module logic_controller(
       // Update LCD rows with temperature and humidity data (exactly 16 characters)
       // update every 0.5 second
       if (lcd_interval_count == LCD_INTERVAL) begin
-        initialed <= 1'b1;
         lcd_interval_count <= 0;
-        tick <= ~tick;
-        //lcd_en <= 1'b1;
 
-        if (tick) begin
-          // refresh sensor data
-          if (!dht_en ) begin
-            dht_en <= 1'b1;
-          end
-
-          // enable uart tx to send metrics
-          en_tx <= 1'b1;
-
-          // 
-          if (rx_msg_done) begin
-            
-
-            update_settings();
-            update_leds();
-          end
-
-          update_lcd();
-
-          //lcd_en <= 1'b0;
+        if (!initialed) begin
+          initialed <= 1'b1;
           lcd_en <= 1'b1;
-        end else begin
-          dht_en <= 1'b0;
-          lcd_en <= 1'b0;
+        end
+        else begin
+          tick <= ~tick;
+
+          if (tick) begin
+            // refresh sensor data
+            if (!dht_en) begin
+              dht_en <= 1'b1;
+            end
+
+            // enable uart tx to send metrics
+            en_tx <= 1'b1;
+
+            // check if received a string from uart
+            if (rx_msg_done) begin
+              update_settings();
+              update_leds();
+            end
+
+            update_lcd();
+
+            //lcd_en <= 1'b0;
+            lcd_en <= 1'b1;
+          end else begin
+            dht_en <= 1'b0;
+            lcd_en <= 1'b0;
+          end
         end
       end else begin
         lcd_interval_count <= lcd_interval_count + 1;
@@ -101,7 +105,7 @@ module logic_controller(
       end
 
       // disable uart - stop sending metrics
-      if (en_tx && rx_msg_done) begin
+      if (en_tx && tx_msg_done) begin
         en_tx <= 1'b0;
       end
     end

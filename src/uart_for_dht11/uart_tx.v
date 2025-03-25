@@ -4,6 +4,7 @@ module uart_tx(
   input  wire tx_start,         // Start transmission signal
   input  wire [7:0] tx_data,    // Data to be transmitted
   output reg tx,                // UART TX output
+  output reg tx_done,           // Transmission done flag
   output reg tx_busy            // Transmission busy flag
 );
 
@@ -21,12 +22,14 @@ module uart_tx(
       tx_busy <= 0;
       bit_index <= 0;
       clk_count <= 0;
+      tx_done <= 0;
     end else begin
       if (tx_start && !tx_busy) begin
         tx_shift_reg <= {1'b1, tx_data, 1'b0}; // Start bit (0) + Data + Stop bit (1)
-        tx_busy <= 1;
+        tx_busy <= 1'b1;
         bit_index <= 0;
         clk_count <= 0;
+        tx_done <= 0;
       end
 
       if (tx_busy) begin
@@ -38,7 +41,8 @@ module uart_tx(
           bit_index <= bit_index + 1;
 
           if (bit_index == 9) begin
-            tx_busy <= 0; // End transmission after stop bit
+            tx_busy <= 1'b0; // End transmission after stop bit
+            tx_done <= 1;
           end
         end
       end

@@ -31,13 +31,14 @@ module dht11_reader (
       led1_test <= 1'b0;
       led2_test <= 1'b0;
     end else if (en) begin
-      led2_test <= 1'b1;
+      // led2_test <= 1'b1;
       case (state)
         0: begin
           counter <= 0;
           data_ready <= 0;
           state <= 1;
           led1_test <= 1'b0;
+          //led2_test <= 1'b0;
           humidity <= 8'b0;
           temperature <= 8'b0;
         end
@@ -62,6 +63,7 @@ module dht11_reader (
           if (dht_data == 0) begin
             state <= 4;
             counter <= 0;
+            //led1_test <= 1'b1;
           end
         end
 
@@ -88,7 +90,6 @@ module dht11_reader (
 
           if (bit_count == 40) begin
             state <= 6;
-            led1_test <= 1'b1;
           end
         end
 
@@ -97,19 +98,19 @@ module dht11_reader (
           if (dht_data_reg[39:32] + dht_data_reg[31:24] + dht_data_reg[23:16] + dht_data_reg[15:8] == dht_data_reg[7:0]) begin
             humidity <= dht_data_reg[39:32];
             temperature <= dht_data_reg[23:16] + 2; // add more 2 degrees to the temperature
-            data_ready <= 1;
+            data_ready <= 1'b1;
             //led1_test <= 1'b1;
           end else begin
-            data_ready <= 0;
-            //led2_test <= 1'b1;
+            data_ready <= 1'b1; // temporary for testing
           end
+          led1_test <= 1'b1;
           state <= 0;
         end
       endcase
     end else begin
       state <= 0;
       counter <= 0;
-      dht_data_reg <= 0;
+      // dht_data_reg <= 0;
       bit_count <= 0;
       data_ready <= 0;
       led2_test <= 1'b0;

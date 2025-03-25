@@ -53,7 +53,7 @@ module top_coldstorage(
   // uart
   // wire [6:0] max_temp, min_temp, max_hum, min_hum;
   wire [7:0] chr_cmd, chr_val0, chr_val1;
-  wire rx_msg_done, en_tx;
+  wire rx_msg_done, en_tx, tx_msg_done;
 
   logic_controller logic_controller_inst(
     .clk(clk_1MHz),
@@ -71,6 +71,7 @@ module top_coldstorage(
     .chr_val1(chr_val1),
     .en_tx(en_tx),
     .rx_msg_done(rx_msg_done),
+    .tx_msg_done(tx_msg_done),
 
     // lcd:
     .lcd_en(lcd_en),
@@ -83,7 +84,7 @@ module top_coldstorage(
   );
 
   dht11_reader dht11_reader_inst(
-    .clk(clk),
+    .clk(clk_1MHz),
     .rst_n(rst_n),
     .en(dht_en),
     .dht_data(dht11_data),
@@ -100,6 +101,7 @@ module top_coldstorage(
     .temperature(temperature),
     .humidity(humidity),
     .en_tx(en_tx),
+    .tx_msg_done(tx_msg_done),
     .tx(tx),
     .rx(rx),
     .fan_state(led_fan),

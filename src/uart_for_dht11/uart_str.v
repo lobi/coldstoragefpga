@@ -19,6 +19,7 @@ module uart_string(
   input wire rx,
   output wire tx,
   input wire en_tx,
+  output reg tx_msg_done,
 
   // humidifer & cooling fan states
   input wire fan_state,
@@ -49,34 +50,22 @@ module uart_string(
   // SEND_INTERVAL = Clock frequency (1 MHz) * Time (1 second) = 1,000,000 cycles
   localparam SEND_INTERVAL = 1_000_000; // 1 second for 1MHz clock
 
+  localparam IDLE = 2'b00, LOAD = 2'b01, TRANSMIT = 2'b10, DONE = 2'b11;
   wire tx_done, rx_done;
 
-  reg [2:0] tx_index;  // Index for 8 characters
+  reg [3:0] tx_index;  // Index for numbers from 0 to 9
   reg [7:0] tx_data;
   reg send_start;
   reg [31:0] timer_count; // Timer counter for 1-second delay
   wire tx_busy;
 
   // ASCII message to send
-  reg [6:0] tx_msg [0:6];
+  reg [7:0] tx_msg [0:8]; // 9 ascii characters
 
   integer temp;
 
-  initial begin
-    tx_msg[0] = 8'h53; // ASCII 'S'
-    tx_msg[1] = 8'h3A; // ASCII ':'
-    tx_msg[2] = 8'h30; // ASCII '0'
-    tx_msg[3] = 8'h30; // ASCII '0'
-    tx_msg[4] = 8'h30; // ASCII '0'
-    tx_msg[5] = 8'h30; // ASCII '0'
-    tx_msg[6] = 8'h2F; // ASCII '/'
-    //tx_msg[6] = 8'h30; // ASCII '0'
-    //tx_msg[7] = 8'h30; // ASCII '0'
-    //tx_msg[8] = 8'h2F; // ASCII '\n'
-  end
-
   // Sending logic - TX Handler
-  reg TX_STATE;
+  reg [1:0] TX_STATE;
   always @(posedge clk_1Mhz or negedge rst_n) begin
     /*
       Handle the state machine for sending the string of ASCII characters every 1 second via UART
@@ -90,46 +79,60 @@ module uart_string(
       tx_msg[3] <= 8'h30; // ASCII '0'
       tx_msg[4] <= 8'h30; // ASCII '0'
       tx_msg[5] <= 8'h30; // ASCII '0'
-      tx_msg[6] <= 8'h2F; // ASCII '/'
-      // tx_msg[6] <= 8'h30; // ASCII '0'
-      // tx_msg[7] <= 8'h30; // ASCII '0'
-      //tx_msg[8] <= 8'h2F; // ASCII '/'
+      //tx_msg[6] <= 8'h2F; // ASCII '/'
+      tx_msg[6] <= 8'h30; // ASCII '0'
+      tx_msg[7] <= 8'h30; // ASCII '0'
+      tx_msg[8] <= 8'h2F; // ASCII '/'
 
+      tx_msg_done <= 1'b0;
       tx_index <= 0;
-      send_start <= 0;
+      send_start <= 1'b0;
       timer_count <= 0;
-      TX_STATE <= 0;
+      TX_STATE <= IDLE;
+      //txstate <= 0;
     end else if (en_tx) begin
       case (TX_STATE)
-        0: begin
-          // Wait for 1-second interval
-          if (timer_count == SEND_INTERVAL) begin
-            timer_count <= 0;
-            TX_STATE <= 1; // Transition to sending state
-          end else begin
-            timer_count <= timer_count + 1;
+        IDLE: begin
+          tx_msg_done <= 1'b0; // Reset done flag
+          if (!tx_busy) begin
+            // Wait for 1-second interval
+            if (timer_count == SEND_INTERVAL) begin
+              timer_count <= 0;
+              TX_STATE <= LOAD;
+            end else begin
+              timer_count <= timer_count + 1;
+            end
           end
         end
-        1: begin
-          // Update sensor data at the start of transmission
-          if (tx_index == 0 && !tx_busy) begin
+        LOAD: begin
+          if (tx_index == 0) begin
             tx_msg[2] <= temperature / 10 + 8'h30;
             tx_msg[3] <= temperature % 10 + 8'h30;
             tx_msg[4] <= humidity / 10 + 8'h30;
             tx_msg[5] <= humidity % 10 + 8'h30;
-            // tx_msg[6] <= fan_state ? 8'h31 : 8'h30; // ASCII '1' or '0'
-            // tx_msg[7] <= hum_state ? 8'h31 : 8'h30; // ASCII '1' or '0'
+            tx_msg[6] <= fan_state ? 8'h31 : 8'h30; // ASCII '1' or '0'
+            tx_msg[7] <= hum_state ? 8'h31 : 8'h30; // ASCII '1' or '0'
           end
 
-          // Send one character at a time
-          if (!tx_busy && !send_start) begin
-            tx_data <= tx_msg[tx_index]; // Load the current character
-            send_start <= 1;            // Start UART transmission
-          end else if (send_start && !tx_busy) begin
-            send_start <= 0;            // Clear send_start after transmission
-            tx_index <= (tx_index < 6) ? tx_index + 1 : 0; // Increment or reset index
-            TX_STATE <= (tx_index == 6) ? 0 : TX_STATE;    // Transition to idle if done
+          tx_data <= tx_msg[tx_index]; // Load the current character
+          send_start <= 1'b1;          // Start UART transmission
+          TX_STATE <= TRANSMIT;
+        end
+        TRANSMIT: begin
+          if (tx_done) begin
+            send_start <= 1'b0;        // Clear send_start after transmission
+            if (tx_index < 8) begin
+              tx_index <= tx_index + 1;
+              TX_STATE <= LOAD;       // Load the next character
+            end else begin
+              tx_index <= 0;
+              TX_STATE <= DONE;       // All characters sent
+            end
           end
+        end
+        DONE: begin
+          tx_msg_done <= 1'b1;         // Set done flag
+          TX_STATE <= IDLE;           // Return to idle state
         end
       endcase
     end
@@ -210,7 +213,8 @@ module uart_string(
     .tx_start(send_start),
     .tx_data(tx_data),
     .tx(tx),
-    .tx_busy(tx_busy)
+    .tx_busy(tx_busy),
+    .tx_done(tx_done)
   );
 
   uart_rx uart_rx_inst (

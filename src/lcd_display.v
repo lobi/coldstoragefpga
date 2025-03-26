@@ -7,7 +7,8 @@ module lcd_display(
     input  [127:0]  row2,                   // row 2 data
     output reg[7:0] data,                   // data to write
     output          cmd_data,               // 0 = command, 1 = data
-    output reg      ena_write               // enable write flag
+    output reg      ena_write,              // enable write flag
+    output          busy                    // busy flag
 );
 
     localparam  DELAY           = 50;       // delay 50us
@@ -15,9 +16,9 @@ module lcd_display(
     // FSM states
     localparam  WaitEn          = 0,
                 Write           = 1,
-                WaitWrite       = 3,
-                WaitDelay       = 4,
-                Done            = 5;
+                WaitWrite       = 2,
+                WaitDelay       = 3,
+                Done            = 4;
 
     reg [2:0]   state, next_state;          
     reg [20:0]  cnt;                        // counter
@@ -41,9 +42,11 @@ module lcd_display(
         end
     endgenerate
 
-    reg [5:0]   ptr;                        // pointer to cmd_data_array   
+    reg [5:0]   ptr;                        // pointer to cmd_data_array
 
     assign cmd_data = (ptr <= 6'd6 || ptr == 6'd23) ? 1'b0 : 1'b1;  // 0 = command, 1 = data
+
+    assign busy = ~(state == WaitEn);
 
     // microsecond counter
     always @(posedge clk_1MHz, negedge rst_n) begin
@@ -73,7 +76,7 @@ module lcd_display(
                 Write:      next_state = WaitWrite;
                 WaitWrite:  next_state = done_write ? WaitDelay : WaitWrite;
                 WaitDelay:  next_state = (ptr == 6'd39) ? Done : ((cnt == DELAY) ? Write : WaitDelay);
-                Done:       next_state = Done;
+                Done:       next_state = WaitEn;
             endcase
         end
     end
@@ -82,7 +85,7 @@ module lcd_display(
     always @(posedge clk_1MHz, negedge rst_n) begin
         if (!rst_n) begin
             cnt_clr     = 1'b1;
-            ena_write  <= 1'b0;
+            ena_write  <= 1'b0;            
         end else begin
             case (state)
                 WaitEn: begin
@@ -107,6 +110,8 @@ module lcd_display(
     // ptr counter
     always @(posedge clk_1MHz, negedge rst_n) begin
         if (!rst_n)
+            ptr <= 6'd0;
+        else if (state == WaitEn)
             ptr <= 6'd0;
         else if (state == Write)
             ptr <= ptr + 1'b1;

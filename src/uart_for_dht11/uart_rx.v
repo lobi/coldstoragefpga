@@ -20,11 +20,11 @@ module uart_rx (
       rx_busy <= 0;
       clk_count <= 0;
       bit_index <= 0;
-      done <= 0;
+      done <= 1'b0; // Reset done signal after stop bit validation
     end else begin
       if (!rx_busy && !rx) begin
         // Start bit detected (low signal)
-        rx_busy <= 1;
+        rx_busy <= 1'b1;
         clk_count <= BIT_PERIOD / 2; // Align to middle of start bit
         bit_index <= 0;
       end
@@ -39,17 +39,19 @@ module uart_rx (
 
           if (bit_index == 9) begin
             if (rx_shift_reg[9] == 1'b1) begin // Validate stop bit
-              rx_busy <= 0;
-              done <= 1;
+              rx_busy <= 1'b0;
+              done <= 1'b1; // Set done signal when a valid byte is received
               data_out <= rx_shift_reg[8:1]; // Extract only data bits
             end else begin
-              rx_busy <= 0; // Stop bit error, reset reception
-              done <= 0;
+              rx_busy <= 1'b0; // Stop bit error, reset reception
+              done <= 1'b0;
             end
           end
         end
       end else begin
-        done <= 0;
+        if (done) begin
+          done <= 1'b0; // Ensure done is cleared after being read
+        end
       end
     end
   end

@@ -17,7 +17,36 @@ module dht11_reader (
 
   // Drive the `dht_data` line low only during the start signal
   assign dht_data = (state == 1) ? 1'b0 : 1'bz;
+  initial begin
+    humidity <= 8'h28;
+    temperature <= 8'h21;
+  end
 
+  // plan 3: manual repeat increase humdity & temperature values every 3 seconds: temperature from 32 to 35, humidity from 40 to 45
+  always @(posedge clk or negedge rst_n) begin
+    if (!rst_n) begin
+      humidity <= 8'h28;
+      temperature <= 8'h21;
+    end else if (en) begin
+      counter <= counter + 1;
+      if (counter >= 3_000_000) begin // 3 seconds for 1 MHz clock
+        counter <= 0;
+        if (temperature < 35) begin
+          temperature <= temperature + 1;
+        end else begin
+          temperature <= 32;
+        end
+
+        if (humidity < 45) begin
+          humidity <= humidity + 1;
+        end else begin
+          humidity <= 40;
+        end
+      end
+    end
+  end
+
+  /*
   always @(posedge clk or negedge rst_n) begin
     if (!rst_n) begin
       state <= 0;
@@ -116,4 +145,5 @@ module dht11_reader (
       led2_test <= 1'b0;
     end
   end
+  */
 endmodule

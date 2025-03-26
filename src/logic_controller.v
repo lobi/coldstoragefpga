@@ -41,6 +41,11 @@ module logic_controller(
     lcd_row2 = "     Hello      ";
     dht_en <= 1'b0;
 
+    max_temp <= 34; // 18 degrees Celsius
+    min_temp <= 1; // 0 degrees Celsius
+    min_hum <= 42; // 10%
+    max_hum <= 63; // 35%
+
     rx_msg_done_reg <= 1'b0;
   end
   always @(posedge clk or negedge rst_n) begin

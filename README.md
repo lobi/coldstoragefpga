@@ -12,23 +12,18 @@ The **Cold Storage Control System** is designed to monitor and regulate **temper
 * **FPGA-Based Control**: Uses the Zuboard 1CG FPGA for real-time processing and device control.
 
 # Hardware Components
-* Zuboard 1CG FPGA (Main controller)
-* DHT11 Sensor (Temperature & Humidity measurement)
-* Cooling Fan (Temperature regulation) - simulated by a LED indicator
-* Humidifier Machine (Humidity control) - simulated by a LED indicator
-* ESP8266 Wi-Fi Module (Data transmission to ThingsBoard)
-* Power Supply (Appropriate voltage for all components)
-* Thingsboard.cloud to visualization & remote control
-* USB UART FT232RL (UART communication testing - during implementation)
-
-# System Architecture
-![Work Flow](/docs/photos/WorkFlow.png "Work Flow")
 * **Zuboard 1CG FPGA** (Main controller)
 * **DHT11 Sensor** (Temperature & Humidity measurement)
 * **Cooling Fan** (Temperature regulation) - represented by a LED indicator
 * **Humidifier Machine** (Humidity control) - represented by a LED indicator
 * **ESP8266 Wi-Fi Module** (Data transmission to ThingsBoard)
 * **Power Supply** (Appropriate voltage for all components)
+* **Thingsboard.cloud** to visualization & remote control
+* **USB UART FT232RL** (UART communication testing - during implementation)
+
+# System workflow
+![Work Flow](/docs/photos/WorkFlow.png "Work Flow")
+
 ## FPGA implementation
 Block Design:
 ![Block Design](/docs/photos/EDA-Vivado-BlockDesign.png "Block Design")

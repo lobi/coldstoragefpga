@@ -215,9 +215,13 @@ module uart_string(
           // Check for newline character ('\n') or * or '/' character
           if (rx_data == 8'h0A || rx_data == 8'h2A || rx_data == 8'h2F) begin
             rx_msg_done <= 1'b1;
+            RX_STATE <= 0;
           end
         end
       endcase
+    end
+    else if (rx_busy && !rx_done) begin
+      rx_msg_done <= 1'b0;
     end
   end
 

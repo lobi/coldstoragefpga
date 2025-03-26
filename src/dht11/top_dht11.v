@@ -22,7 +22,7 @@ module dht11_reader (
     temperature <= 8'h21;
   end
 
-  // plan 3: manual repeat increase humdity & temperature values every 3 seconds: temperature from 32 to 35, humidity from 40 to 45
+  // plan 3: manual repeat increase humdity & temperature values every 3 seconds: temperature from 30 to 35, humidity from 40 to 45
   always @(posedge clk or negedge rst_n) begin
     if (!rst_n) begin
       humidity <= 8'h28;
@@ -34,7 +34,7 @@ module dht11_reader (
         if (temperature < 35) begin
           temperature <= temperature + 1;
         end else begin
-          temperature <= 32;
+          temperature <= 30;
         end
 
         if (humidity < 45) begin

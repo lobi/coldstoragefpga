@@ -51,10 +51,10 @@ module logic_controller(
       rx_msg_done_reg <= 1'b0;
 
       // reset threshold values
-      max_temp <= 18; // 18 degrees Celsius
-      min_temp <= 0; // 0 degrees Celsius
-      min_hum <= 10; // 10%
-      max_hum <= 35; // 35%
+      max_temp <= 34; // 18 degrees Celsius
+      min_temp <= 1; // 0 degrees Celsius
+      min_hum <= 42; // 10%
+      max_hum <= 63; // 35%
       dht_en <= 1'b0;
 
       // lcd
@@ -227,7 +227,6 @@ module logic_controller(
       lcd_row1 <= {"RX: ", chr_cmd, chr_val0, chr_val1, "         "};
       lcd_row2 <= {"Tem:", temp_tens, temp_units, "C Hum:", humi_tens, humi_units, "% "};
       interval_counter <= 0; // reset counter to have a delay before clearing the lcd
-
       lcd_en <= 1'b1;
     end
   endtask

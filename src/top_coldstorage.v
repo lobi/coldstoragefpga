@@ -46,7 +46,7 @@ module top_coldstorage(
 
   // lcd 16x2
   wire [127:0] lcd_row1, lcd_row2;
-  wire lcd_en;
+  wire lcd_en, lcd_busy;
   // sensor data
   wire [7:0] temperature, humidity;
   wire dht_en, dht_data_ready;
@@ -115,9 +115,10 @@ module top_coldstorage(
   lcd_16x2 lcd_16x2_inst(
     .clk_1MHz(clk_1MHz),
     .rst_n(rst_n),
-    .ena(lcd_en),
+    .lcd_ena(lcd_en),
     .row1(lcd_row1),
     .row2(lcd_row2),
+    .busy(lcd_busy),
     .sda(sda_lcd),
     .scl(scl_lcd)
   );  

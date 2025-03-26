@@ -64,6 +64,21 @@ module uart_string(
 
   integer temp;
 
+  initial begin
+    tx_msg[0] = 8'h53; // ASCII 'S'
+    tx_msg[1] = 8'h3A; // ASCII ':'
+    tx_msg[2] = 8'h30; // ASCII '0'
+    tx_msg[3] = 8'h30; // ASCII '0'
+    tx_msg[4] = 8'h30; // ASCII '0'
+    tx_msg[5] = 8'h30; // ASCII '0'
+    //tx_msg[6] = 8'h2F; // ASCII '/'
+    tx_msg[6] = 8'h30; // ASCII '0'
+    tx_msg[7] = 8'h30; // ASCII '0'
+    tx_msg[8] = 8'h2F; // ASCII '\n'
+
+    tx_msg_done = 1'b0;
+  end
+
   // Sending logic - TX Handler
   reg [1:0] TX_STATE;
   always @(posedge clk_1Mhz or negedge rst_n) begin
@@ -175,12 +190,11 @@ module uart_string(
           end
         end
         1: begin
-          // Check for fan control value (ASCII digit). it should be 0 or 1
-          if (rx_data == 8'h30 || rx_data == 8'h31) begin // ASCII '0' or '1'
+          // check for first ascii number, it couble be a minus or a numbers:
+          if ((rx_data >= 8'h30 && rx_data <= 8'h39) || rx_data == 8'h2D) begin // ASCII '0' to '9' or '-'
             RX_STATE <= 2;
             chr_val0 <= rx_data;
           end
-          // led_fan_reg <= 1; // test
         end
         2: begin
           // Check for ':' (separator)
@@ -190,8 +204,8 @@ module uart_string(
           // led_hum_reg <= 1; // test
         end
         3: begin
-          // Check for humidity control value (ASCII digit). it should be 0 or 1
-          if (rx_data == 8'h30 || rx_data == 8'h31) begin // ASCII '0' or '1'
+          // Check for second ascii number
+          if (rx_data >= 8'h30 && rx_data <= 8'h39) begin // ASCII '0' or '1'
             RX_STATE <= 4;
             chr_val1 <= rx_data;
           end

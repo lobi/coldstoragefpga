@@ -11,10 +11,10 @@ module logic_controller(
   // uart
   input   wire  [7:0]     chr_cmd,
   input   wire  [7:0]     chr_val0,
-  input   wire  [7:8]     chr_val1,
+  input   wire  [7:0]     chr_val1,
   input   wire            rx_msg_done,
   input   wire            tx_msg_done,
-  output   reg             en_tx,
+  output  reg             en_tx,
 
   // LCD display
   output  reg             lcd_en,   // LCD enable signal
@@ -26,8 +26,8 @@ module logic_controller(
   output  reg             led_hum      // humidifier (1/0): on/off
 );
 
-  localparam LCD_INTERVAL = 500_000; // 0.5 second for 1 MHz clock
-  integer lcd_interval_count = 0;
+  localparam INTERVAL = 500_000; // 0.5 second for 1 MHz clock
+  integer interval_counter = 0;
   reg [6:0] max_temp, min_temp, min_hum, max_hum; // 7 bits wide (enough for 0-100 integer) 
   
   reg [7:0] temp_tens, temp_units, humi_tens, humi_units;
@@ -39,7 +39,6 @@ module logic_controller(
     lcd_row2 = "     Hello      ";
     dht_en <= 1'b0;
   end
-  reg initialed;
   always @(posedge clk or negedge rst_n) begin
     if (!rst_n) begin
       // Reset all states and signals
@@ -56,47 +55,45 @@ module logic_controller(
       // lcd
       lcd_row1 <= "  Cold Storage  ";
       lcd_row2 <= "     Welcome    ";
-      lcd_en <= 1'b0;
-      initialed <= 1'b0;
+      lcd_en <= 1'b1;
+
+      // led indicators
+      led_fan <= 1'b0;
+      led_hum <= 1'b0;
     end else begin
       // Update LCD rows with temperature and humidity data (exactly 16 characters)
       // update every 0.5 second
-      if (lcd_interval_count == LCD_INTERVAL) begin
-        lcd_interval_count <= 0;
+      if (interval_counter == INTERVAL) begin
+        interval_counter <= 0;
 
-        if (!initialed) begin
-          initialed <= 1'b1;
-          lcd_en <= 1'b1;
-        end
-        else begin
-          tick <= ~tick;
+        tick <= ~tick;
 
-          if (tick) begin
-            // refresh sensor data
-            if (!dht_en) begin
-              dht_en <= 1'b1;
-            end
-
-            // enable uart tx to send metrics
-            en_tx <= 1'b1;
-
-            // check if received a string from uart
-            if (rx_msg_done) begin
-              update_settings();
-              update_leds();
-            end
-
-            update_lcd();
-
-            //lcd_en <= 1'b0;
-            lcd_en <= 1'b1;
-          end else begin
-            dht_en <= 1'b0;
-            lcd_en <= 1'b0;
+        if (tick) begin
+          // refresh sensor data
+          if (!dht_en) begin
+            dht_en <= 1'b1;
           end
+
+          // enable uart tx to send metrics
+          en_tx <= 1'b1;
+
+          // lcd
+          update_lcd();
+          lcd_en <= 1'b1;
+        end else begin
+          dht_en <= 1'b0;
+          lcd_en <= 1'b0;
         end
       end else begin
-        lcd_interval_count <= lcd_interval_count + 1;
+        interval_counter <= interval_counter + 1;
+      end
+
+      // check if received a string from uart
+      if (rx_msg_done) begin
+        update_settings();
+        // if (chr_cmd != 8'h4C) begin // L: Exclude case of LED force update
+        //   update_leds();
+        // end
       end
 
       // disable dht_en if data is done
@@ -110,26 +107,63 @@ module logic_controller(
       end
     end
   end
+  /*
+  always @(posedge tick or negedge rst_n) begin
+    if (!rst_n) begin
+      // Reset all states and signals
+      lcd_en <= 1'b1;
+    end
+    else begin
+      // refresh sensor data
+      if (!dht_en) begin
+        dht_en <= 1'b1;
+      end
+
+      // enable uart tx to send metrics
+      en_tx <= 1'b1;
+
+      // lcd
+      lcd_en <= 1'b1;
+      update_lcd();
+    end
+  end
+  */
 
   task update_settings;
     begin
       // data from uart: chr_cmd, chr_val0, chr_val1
       if (chr_cmd == 8'h4C) begin // ASCII 'L'
         // Update LED states based on received values
-        led_fan <= (chr_val0 != 8'h30); // Turn on if not '0'
-        led_hum <= (chr_val1 != 8'h30); // Turn on if not '0'
+        led_fan <= (chr_val0 == 8'h31); // Turn on if '1'
+        led_hum <= (chr_val1 == 8'h31); // Turn on if not '0'
       end else if (chr_cmd == 8'h41) begin // ASCII 'A'
         // combine chr_val0 and chr_val1 to form a 2-digit number, then assign to max_temp
-        max_temp <= ((chr_val0 - 8'h30) * 10) + (chr_val1 - 8'h30);
+        if (chr_val0 == 8'h2D) begin // ASCII '-'
+          max_temp <= -1 * ((chr_val1 - 8'h30) * 10);
+        end else begin
+          max_temp <= ((chr_val0 - 8'h30) * 10) + (chr_val1 - 8'h30);
+        end
       end else if (chr_cmd == 8'h42) begin // ASCII 'B'
         // combine chr_val0 and chr_val1 to form a 2-digit number, then assign to min_temp
-        min_temp <= ((chr_val0 - 8'h30) * 10) + (chr_val1 - 8'h30);
+        if (chr_val0 == 8'h2D) begin // ASCII '-'
+          min_temp <= -1 * ((chr_val1 - 8'h30) * 10);
+        end else begin
+          min_temp <= ((chr_val0 - 8'h30) * 10) + (chr_val1 - 8'h30);
+        end
       end else if (chr_cmd == 8'h43) begin // ASCII 'C'
         // combine chr_val0 and chr_val1 to form a 2-digit number, then assign to max_hum
-        max_hum <= ((chr_val0 - 8'h30) * 10) + (chr_val1 - 8'h30);
+        if (chr_val0 == 8'h2D) begin // ASCII '-'
+          max_hum <= -1 * ((chr_val1 - 8'h30) * 10);
+        end else begin
+          max_hum <= ((chr_val0 - 8'h30) * 10) + (chr_val1 - 8'h30);
+        end
       end else if (chr_cmd == 8'h44) begin // ASCII 'D'
         // combine chr_val0 and chr_val1 to form a 2-digit number, then assign to min_hum
-        min_hum <= ((chr_val0 - 8'h30) * 10) + (chr_val1 - 8'h30);
+        if (chr_val0 == 8'h2D) begin // ASCII '-'
+          min_hum <= -1 * ((chr_val1 - 8'h30) * 10);
+        end else begin
+          min_hum <= ((chr_val0 - 8'h30) * 10) + (chr_val1 - 8'h30);
+        end
       end
     end
   endtask

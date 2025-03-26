@@ -189,9 +189,10 @@ void send_metrics(String m_key, String m_val) {
     payload += m_val;
     payload += "}";
     char telemetry[150];
-    Serial.println("sending metric...");
+    Serial.print("- Sending metric " + m_key + ": " + m_val + ":");
     payload.toCharArray(telemetry, 100);
     client.publish("v1/devices/me/telemetry", telemetry);
+    Serial.println(" done!");
 }
 
 void send_attribute(String attr, String val) {
@@ -355,8 +356,8 @@ void listen_on_uart() {
       }
       i++;
     }
-    Serial.println("Final buff: " + String(buff));
-    Serial.println(". done!");
+    // Serial.print(". Final buff: " + String(buff));
+    Serial.print(". done!");
     String str_rx;
     
     // identify each message, then proceed with thingsboard
@@ -373,7 +374,7 @@ void listen_on_uart() {
       String cmd = str_rx.substring(0, 1);
       String val = str_rx.substring(2, str_rx.length());
 
-      Serial.println("uart cmd: " + cmd);
+      Serial.println(". UART cmd: " + cmd);
       if (cmd == "002:") {
         //send_attribute("getControlMode", val + ".0");
         response_rpc(rpc_002_topic, val);
@@ -386,13 +387,13 @@ void listen_on_uart() {
         String temp_state = val.substring(4, 5) == "1" ? "true" : "false";
         String hum_state = val.substring(5, 6) == "1" ? "true" : "false";
         send_metrics(HUMIDITY_KEY, hum);
-        Serial.println("telemetry HUMIDITY_KEY was sent: " + hum);
+        // Serial.print(". Telemetry HUMIDITY_KEY was sent: " + hum);
         send_metrics(TEMPERATURE_KEY, temp);
-        Serial.println("telemetry TEMPERATURE_KEY was sent: " + temp);
+        // Serial.print(". Telemetry TEMPERATURE_KEY was sent: " + temp);
         send_metrics("temp_state", temp_state);
-        Serial.println("telemetry temp_state was sent: " + temp_state);
+        // Serial.print(". Telemetry temp_state was sent: " + temp_state);
         send_metrics("hum_state", hum_state);
-        Serial.println("telemetry hum_state was sent: " + hum_state);
+        // Serial.println(". Telemetry hum_state was sent: " + hum_state);
       } else if (cmd == "006:") {
         response_rpc(rpc_006_topic, String(val.toInt()));
         Serial.print("response rpc topic: " + rpc_006_topic);

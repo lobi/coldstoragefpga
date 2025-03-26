@@ -1,152 +1,182 @@
-`timescale 1ns / 1ps
-//////////////////////////////////////////////////////////////////////////////////
-// Company: 
-// Engineer: 
-// 
-// Create Date: 03/05/2025 05:15:49 PM
-// Design Name: 
-// Module Name: lcd_write_frame
-// Project Name: 
-// Target Devices: 
-// Tool Versions: 
-// Description: 
-// 
-// Dependencies: 
-// 
-// Revision:
-// Revision 0.01 - File Created
-// Additional Comments:
-// 
-//////////////////////////////////////////////////////////////////////////////////
-
-
-//`timescale 1ns / 1ps
-//////////////////////////////////////////////////////////////////////////////////
-// Module: lcd_write_frame
-// Description: Nhận vào 2 hàng dữ liệu (row1 và row2, mỗi hàng 128 bit),
-//              tạo thành một frame gồm 34 byte theo thứ tự:
-//                - Byte 0: 0x80 (command: đặt con trỏ cho hàng 1)
-//                - Byte 1..16: dữ liệu của row1
-//                - Byte 17: 0xC0 (command: đặt con trỏ cho hàng 2)
-//                - Byte 18..33: dữ liệu của row2
-//              Gửi tuần tự từng byte qua I²C sử dụng module lcd_write_cmd_data.
-//              Khi frame xong, flag done được khẳng định.
-//////////////////////////////////////////////////////////////////////////////////
-module lcd_write_frame (
-    input         clk_1MHz,   // Clock 1MHz (1µs/xung)
-    input         rst_n,      // Reset active low
-    input  [127:0] row1,      // Dữ liệu cho hàng 1 (16 byte)
-    input  [127:0] row2,      // Dữ liệu cho hàng 2 (16 byte)
-    inout         sda_lcd,    // Bus SDA dành cho LCD
-    output        scl_lcd,    // Bus SCL dành cho LCD
-    output reg    done        // Flag báo hiệu frame đã được gửi xong
+module i2c_writeframe(
+    input       clk_1MHz,               // 1 MHz = 1us clock
+    input       rst_n,                  // active low reset
+    input       en_write,               // enable write
+    input       start_frame,            // start frame flag
+    input       stop_frame,             // stop frame flag
+    input [7:0] data,                   // data to write
+    inout       sda,                    // bidirectional data line
+    output reg  scl,                    // clock line
+    output      done,                   // write done flag
+    output reg  sda_en                  // sda write enable
 );
 
-    // Số byte của frame: 34 (index 0 đến 33)
-    localparam FRAME_SIZE = 34;
+    localparam  DELAY       = 10;       // 10us delay
+    reg [20:0]  cnt;                    // counter
+    reg         cnt_clr;                // counter clear flag
+
+    // FSM states
+    localparam  WaitEn      = 0,        // wait for enable  
+                PreStart    = 1,        // prepare for start condition
+                Start       = 2,        // start condition
+                AfterStart  = 3,        // after start condition
+                PreWrite    = 4,        // prepare for write data
+                WriteLow    = 5,        // write data to sda line when scl is low      
+                WriteHigh   = 6,        // when sda is stable, pull scl high to latch the data  
+                WriteDone   = 7,        // write data done     
+                WaitAck     = 8,        // wait for ack from slave
+                Ack1        = 9,        // pull scl high when got ack
+                Ack2        = 10,       // pull scl low to finish ack pulse      
+                AckDone     = 11,       // ack done, check if this is the stop frame. If so, create stop condition.
+                PreStop     = 12,       // prepare for stop condition     
+                Stop        = 13,       // stop condition
+                Done        = 14;       // finish write frame
     
-    // Tạo mảng ROM nội bộ chứa frame dữ liệu
-    reg [7:0] frame [0:FRAME_SIZE-1];
-    integer i;
-    always @(*) begin
-        frame[0] = 8'h80; // Command: đặt con trỏ hàng 1
-        for (i = 1; i <= 16; i = i + 1) begin
-            // Lấy từng byte từ row1: row1[127:120] là byte đầu tiên, row1[119:112] là byte thứ 2, v.v.
-            frame[i] = row1[127 - ((i-1)*8) -: 8];
-        end
-        frame[17] = 8'hC0; // Command: đặt con trỏ hàng 2
-        for (i = 18; i < FRAME_SIZE; i = i + 1) begin
-            // Lấy từng byte từ row2: row2[127:120] là byte đầu tiên, v.v.
-            frame[i] = row2[127 - ((i-18)*8) -: 8];
-        end
+    reg [3:0]   state, next_state;
+    reg [3:0]   bit_cnt;                // bit counter
+    reg         sda_out;                // sda output
+    wire        sda_in;                 // sda input
+
+    // sda is a bidirectional tri-state buffer enabled by sda_en.
+    // When sda_en = 1; if sda_out = 0, sda = 0; if sda_out = 1, sda is high impedance, allowing pull-up resistor pulls sda to 1.
+    // When sda_en = 0; sda is high impedance, allowing read sda from the bus.
+    // assign sda = sda_en ? (~sda_out ? 1'b0 : 1'bz) : 1'bz;
+    // assign sda_in = sda;
+
+    // for simulation, we use those lines instead:
+    assign sda = sda_en ? sda_out : 1'bz;
+    assign sda_in = sda;
+
+    // microsecond counter
+    always @(posedge clk_1MHz, negedge rst_n) begin
+        if (!rst_n)
+            cnt <= 21'd0;
+        else if (cnt_clr)
+            cnt <= 21'd0;
+        else
+            cnt <= cnt + 1'b1;
     end
 
-    // FSM để gửi frame qua I²C
-    localparam STATE_IDLE = 2'd0,
-               STATE_SEND = 2'd1,
-               STATE_WAIT = 2'd2,
-               STATE_INC  = 2'd3,
-               STATE_DONE = 2'd4;
-               
-    reg [1:0] state, next_state;
-    reg [5:0] ptr;            // Con trỏ chạy từ 0 đến 33
-    reg       en;             // Tín hiệu enable gửi cho module lcd_write_cmd_data
-    reg [7:0] data_to_send;   // Dữ liệu byte cần gửi
-    reg       cmd_data;       // 0: command, 1: data
-    
-    // Xác định cmd_data: nếu ptr = 0 hoặc ptr = 17 -> command; các vị trí khác -> data.
-    always @(*) begin
-        if (ptr == 0 || ptr == 17)
-            cmd_data = 1'b0;
+    // reset logic
+    always @(posedge clk_1MHz, negedge rst_n) begin
+        if (!rst_n)
+            state <= WaitEn;
         else
-            cmd_data = 1'b1;
-    end
-    
-    // FSM state register và con trỏ
-    always @(posedge clk_1MHz or negedge rst_n) begin
-        if (!rst_n) begin
-            state <= STATE_IDLE;
-            ptr   <= 0;
-            en    <= 0;
-            data_to_send <= 8'd0;
-            done  <= 0;
-        end else begin
             state <= next_state;
+    end
+
+    // next state logic
+    always @(*) begin
+        if (!rst_n)
+            next_state <= WaitEn;           // reset state, wait for enable
+        else begin
             case (state)
-                STATE_IDLE: begin
-                    ptr <= 0;
-                    en <= 0;
-                    done <= 0;
+                WaitEn:     next_state = en_write ? (start_frame ? PreStart : PreWrite) : WaitEn;
+                PreStart:   next_state = (cnt == DELAY) ? Start : PreStart;
+                Start:      next_state = (cnt == DELAY) ? AfterStart : Start;
+                AfterStart: next_state = (cnt == DELAY) ? WriteLow : AfterStart;
+                PreWrite:   next_state = (cnt == DELAY) ? WriteLow : PreWrite;
+                WriteLow:   next_state = (cnt == DELAY) ? WriteHigh : WriteLow;
+                WriteHigh:  next_state = (cnt == DELAY && bit_cnt == 4'd8) ? WriteDone : ((cnt == DELAY) ? WriteLow : WriteHigh);
+                WriteDone:  next_state = (cnt == DELAY) ? WaitAck : WriteDone;
+                WaitAck:    next_state = (sda_in == 1'b0) ? Ack1 : WaitAck;
+                Ack1:       next_state = (cnt == DELAY) ? Ack2 : Ack1;
+                Ack2:       next_state = (cnt == DELAY) ? AckDone : Ack2;
+                AckDone:    next_state = (cnt == DELAY) ? (stop_frame ? PreStop : Done) : AckDone;
+                PreStop:    next_state = (cnt == DELAY) ? Stop : PreStop;
+                Stop:       next_state = (cnt == DELAY) ? Done : Stop;
+                Done:       next_state = WaitEn;
+            endcase
+        end
+    end   
+
+
+    // output logic
+    always @(posedge clk_1MHz, negedge rst_n) begin
+        if (!rst_n) begin                   // setup initial state
+            sda_en  <= 1'b1;                       
+            cnt_clr <= 1'b1;            
+        end else begin
+            case (state)
+                WaitEn: begin
+                    sda_en  <= 1'b1;        // enable sda write
+                    cnt_clr <= 1'b1;        // clear counter
                 end
-                STATE_SEND: begin
-                    data_to_send <= frame[ptr];
-                    en <= 1;
+                PreStart: begin
+                    sda_out <= 1'b1;                                // pull sda and scl high to prepare for start condition
+                    scl     <= 1'b1;        
+                    cnt_clr <= (cnt == DELAY-1) ? 1'b1 : 1'b0;      // delay 10us
                 end
-                STATE_WAIT: begin
-                    en <= 0;
+                Start: begin
+                    sda_out <= 1'b0;                                // when scl is high, pull sda low for start condition
+                    cnt_clr <= (cnt == DELAY-1) ? 1'b1 : 1'b0;      // delay 10us
                 end
-                STATE_INC: begin
-                    ptr <= ptr + 1;
+                AfterStart: begin
+                    scl     <= 1'b0;                                // pull scl low to prepare for write data
+                    cnt_clr <= (cnt == DELAY-1) ? 1'b1 : 1'b0;      // delay 10us
                 end
-                STATE_DONE: begin
-                    done <= 1;
-                    en <= 0;
+                PreWrite: begin
+                    cnt_clr <= (cnt == DELAY-1) ? 1'b1 : 1'b0;      // delay 10us
                 end
-                default: ;
+                WriteLow: begin
+                    scl     <= 1'b0;                                // when scl is low, write a bit to sda line
+                    sda_out <= data[7-(bit_cnt-1)] ? 1'b1 : 1'b0;   // write data from MSB to LSB
+                    cnt_clr <= (cnt == DELAY-1) ? 1'b1 : 1'b0;      // delay 10us      
+                end
+                WriteHigh: begin
+                    scl     <= 1'b1;                                // when sda is stable, pull scl high to latch a bit
+                    cnt_clr <= (cnt == DELAY-1) ? 1'b1 : 1'b0;      // delay 10us
+                end
+                WriteDone: begin
+                    scl     <= 1'b0;                                // pull scl low to prepare for ack
+                    sda_en  <= 1'b0;                                // disable sda write, prepare for read ack
+                    cnt_clr <= (cnt == DELAY-1) ? 1'b1 : 1'b0;      // delay 10us
+                end
+                WaitAck: begin
+                    cnt_clr <= 1'b1;                                // delay 10us, wait for ack from slave
+                end
+                Ack1: begin
+                    scl     <= 1'b1;                                // when got ack, pull scl high
+                    cnt_clr <= (cnt == DELAY-1) ? 1'b1 : 1'b0;      // delay 10us
+                end
+                Ack2: begin
+                    scl     <= 1'b0;                                // pull scl low to finish ack pulse
+                    cnt_clr <= (cnt == DELAY-1) ? 1'b1 : 1'b0;      // delay 10us
+                end
+                AckDone: begin      
+                    cnt_clr <= (cnt == DELAY-1) ? 1'b1 : 1'b0;      // delay 10us      
+                end
+                PreStop: begin
+                    scl     <= 1'b1;                                // pull scl high to prepare for stop condition
+                    cnt_clr <= (cnt == DELAY-1) ? 1'b1 : 1'b0;      // delay 10us
+                end   
+                Stop: begin
+                    sda_en  <= 1'b1;                                // enable sda write
+                    sda_out <= 1'b1;                                // when scl is high, pull sda high for stop condition        
+                    cnt_clr <= (cnt == DELAY-1) ? 1'b1 : 1'b0;      // delay 10us
+                end
+                Done: begin
+                    cnt_clr <= 1'b1;                                // clear counter
+                end
             endcase
         end
     end
-    
-    // Next state logic
-    always @(*) begin
-        case (state)
-            STATE_IDLE: next_state = STATE_SEND;
-            STATE_SEND: next_state = STATE_WAIT;
-            STATE_WAIT: next_state = (write_done) ? STATE_INC : STATE_WAIT;
-            STATE_INC:  next_state = (ptr == FRAME_SIZE - 1) ? STATE_DONE : STATE_SEND;
-            STATE_DONE: next_state = STATE_DONE;
-            default:    next_state = STATE_IDLE;
-        endcase
-    end
-    
-    // Flag done được truyền ra khi FSM ở STATE_DONE và write_done đã xảy ra.
-    wire write_done;
-    // Kết nối done flag được lấy từ module lcd_write_cmd_data
-    // Trong ví dụ này, chúng ta sử dụng write_done để chuyển sang trạng thái tiếp theo.
-    
-    // Instanciate module lcd_write_cmd_data để gửi 1 byte qua I²C
-    lcd_write_cmd_data lcd_writer (
-        .clk_1MHz(clk_1MHz),
-        .rst_n(rst_n),
-        .data(data_to_send),
-        .cmd_data(cmd_data),
-        .ena(en),
-        .i2c_addr(7'h27),    // Địa chỉ I²C của PCF8574 (điều chỉnh nếu cần)
-        .sda_lcd(sda_lcd),
-        .scl_lcd(scl_lcd),
-        .done(write_done),
-        .sda_en()           // Nếu cần, có thể kết nối cổng điều khiển
-    );
-    
-endmodule
 
+    // bit counter
+    always @(posedge clk_1MHz, negedge rst_n) begin
+        if (!rst_n)
+            bit_cnt <= 4'd0;
+        else begin
+            case (state)
+                WriteLow:   bit_cnt <= (cnt == 1'b0) ? bit_cnt + 1'b1 : bit_cnt;    // bit_cnt starts from 0, increment before writing
+                WaitEn:     bit_cnt <= 4'd0;
+                Done:       bit_cnt <= 4'd0;
+                default:    bit_cnt <= bit_cnt;
+            endcase
+        end
+    end
+
+    // done flag
+    assign done = (state == Done);
+
+endmodule

@@ -66,5 +66,10 @@ Thingsboard:
     * ESP8266 & full setup:
     ![hardware configuration](/docs/photos/wiring.jpg "hardware configuration")
 
+Video demo:
+[![Cold Storage Control System - FPGA Project](https://img.youtube.com/vi/w5AyaIGeWPU/0.jpg)](https://youtu.be/w5AyaIGeWPU)
+
+
+
 Project Document Details
 https://docs.google.com/document/d/1OrEBO5JM59HGXvwQGIddRXkbY47BfjuRY3ZWswu3Bf0/edit?tab=t.0#heading=h.orjg5xpkupib

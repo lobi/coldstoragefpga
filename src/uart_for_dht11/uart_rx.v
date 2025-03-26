@@ -25,6 +25,7 @@ module uart_rx (
       if (!rx_busy && !rx) begin
         // Start bit detected (low signal)
         rx_busy <= 1'b1;
+        done <= 1'b0;
         clk_count <= BIT_PERIOD / 2; // Align to middle of start bit
         bit_index <= 0;
       end

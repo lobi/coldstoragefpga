@@ -18,6 +18,7 @@ module logic_controller(
 
   // LCD display
   output  reg             lcd_en,   // LCD enable signal
+  input   wire            lcd_done, // LCD done signal
   output  reg   [127:0]   lcd_row1, // LCD row 1 data (16 characters)
   output  reg   [127:0]   lcd_row2, // LCD row 2 data (16 characters)
 
@@ -32,18 +33,22 @@ module logic_controller(
   
   reg [7:0] temp_tens, temp_units, humi_tens, humi_units;
   reg tick; // 1 second tick - posedge
+  reg rx_msg_done_reg;
 
   initial begin
     // Initialize the LCD lines with 2 lines: 16 characters per line
     lcd_row1 = "  Cold Storage  ";
     lcd_row2 = "     Hello      ";
     dht_en <= 1'b0;
+
+    rx_msg_done_reg <= 1'b0;
   end
   always @(posedge clk or negedge rst_n) begin
     if (!rst_n) begin
       // Reset all states and signals
 
       tick <= 1'b0;
+      rx_msg_done_reg <= 1'b0;
 
       // reset threshold values
       max_temp <= 18; // 18 degrees Celsius
@@ -61,6 +66,12 @@ module logic_controller(
       led_fan <= 1'b0;
       led_hum <= 1'b0;
     end else begin
+      // check to disable lcd: to prevent the lcd flashing/lagging (it loops refresh display until lcd_en is 0)
+      if (lcd_done && lcd_en) begin
+        lcd_en <= 1'b0;
+        //rx_msg_done_reg <= 1'b0;
+      end
+
       // Update LCD rows with temperature and humidity data (exactly 16 characters)
       // update every 0.5 second
       if (interval_counter == INTERVAL) begin
@@ -77,23 +88,35 @@ module logic_controller(
           // enable uart tx to send metrics
           en_tx <= 1'b1;
 
+          // update control humidity and temperature to reflect with the sensor data & settings
+          update_leds();
+
           // lcd
           update_lcd();
-          lcd_en <= 1'b1;
+          //lcd_en <= 1'b1;
         end else begin
           dht_en <= 1'b0;
-          lcd_en <= 1'b0;
+          //lcd_en <= 1'b0;
         end
       end else begin
         interval_counter <= interval_counter + 1;
       end
 
       // check if received a string from uart
-      if (rx_msg_done) begin
+      // if (rx_msg_done) begin
+      //   update_settings();
+      //   if (chr_cmd != 8'h4C) begin // L: Exclude case of LED force update
+      //     update_leds();
+      //   end
+      // end
+      if (rx_msg_done && !rx_msg_done_reg) begin
+        rx_msg_done_reg <= 1'b1;
         update_settings();
-        // if (chr_cmd != 8'h4C) begin // L: Exclude case of LED force update
-        //   update_leds();
-        // end
+        if (chr_cmd != 8'h4C) begin // L: Exclude case of LED force update
+          update_leds();
+        end
+      end else if (!rx_msg_done) begin
+        rx_msg_done_reg <= 1'b0;
       end
 
       // disable dht_en if data is done
@@ -105,29 +128,9 @@ module logic_controller(
       if (en_tx && tx_msg_done) begin
         en_tx <= 1'b0;
       end
+      
     end
   end
-  /*
-  always @(posedge tick or negedge rst_n) begin
-    if (!rst_n) begin
-      // Reset all states and signals
-      lcd_en <= 1'b1;
-    end
-    else begin
-      // refresh sensor data
-      if (!dht_en) begin
-        dht_en <= 1'b1;
-      end
-
-      // enable uart tx to send metrics
-      en_tx <= 1'b1;
-
-      // lcd
-      lcd_en <= 1'b1;
-      update_lcd();
-    end
-  end
-  */
 
   task update_settings;
     begin
@@ -165,6 +168,9 @@ module logic_controller(
           min_hum <= ((chr_val0 - 8'h30) * 10) + (chr_val1 - 8'h30);
         end
       end
+
+      // show rx msg to lcd for testing
+      uart_rx_to_lcd();
     end
   endtask
 
@@ -174,12 +180,16 @@ module logic_controller(
       // Control the LED indicators based on the temperature and humidity data
       if (temperature > max_temp) begin
         led_fan <= 1'b1; // Turn on the cooling fan
+      end else if (temperature < min_temp) begin
+        led_fan <= 1'b0; // Turn on the cooling fan
       end else begin
         led_fan <= 1'b0; // Turn off the cooling fan
       end
 
-      if (humidity < min_hum) begin
+      if (humidity < max_hum) begin
         led_hum <= 1'b1; // Turn on the humidifier
+      end else if (humidity > min_hum) begin
+        led_hum <= 1'b0; // Turn on the humidifier
       end else begin
         led_hum <= 1'b0; // Turn off the humidifier
       end
@@ -208,7 +218,17 @@ module logic_controller(
       end
 
       // let display on
-      // lcd_en <= 1'b1;
+      lcd_en <= 1'b1;
+    end
+  endtask
+
+  task uart_rx_to_lcd;
+    begin
+      lcd_row1 <= {"RX: ", chr_cmd, chr_val0, chr_val1, "         "};
+      lcd_row2 <= {"Tem:", temp_tens, temp_units, "C Hum:", humi_tens, humi_units, "% "};
+      interval_counter <= 0; // reset counter to have a delay before clearing the lcd
+
+      lcd_en <= 1'b1;
     end
   endtask
 

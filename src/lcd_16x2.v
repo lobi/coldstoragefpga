@@ -7,12 +7,13 @@ module lcd_16x2(
   input [127:0]   row2,
   output          busy,
   output          scl,
-  inout           sda
+  inout           sda,
+  output          lcd_done
 );
 
   localparam      i2c_addr = 7'h27;
 
-  wire            done_write;
+  // wire            done_write;
   wire [7:0]      data;
   wire            cmd_data;
   wire            ena_write;
@@ -21,7 +22,7 @@ module lcd_16x2(
     .clk_1MHz           (clk_1MHz),
     .rst_n              (rst_n),
     .ena                (lcd_ena),
-    .done_write         (done_write),
+    .done_write         (lcd_done),
     .row1               (row1),
     .row2               (row2),
     .data               (data),
@@ -39,7 +40,7 @@ module lcd_16x2(
     .i2c_addr           (i2c_addr),
     .sda                (sda),
     .scl                (scl),
-    .done               (done_write)
+    .done               (lcd_done)
   );
 
 endmodule

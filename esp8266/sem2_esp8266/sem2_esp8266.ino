@@ -2,9 +2,9 @@
 #include <ArduinoJson.h>
 #include <ESP8266WiFi.h>
 
-/* Wifi configuration */
-const char* WIFI_SSID = "BALOI";
-const char* WIFI_PASSWORD = "0909286456";
+/* Wifi configuration (Note: ESP dose not support wifi 5G)*/
+const char* WIFI_SSID = "[WIFI_SSID]";
+const char* WIFI_PASSWORD = "[WIFI_PASSWORD]";
 
 /* Thingsboards configuration */
 const char* THINGSBOARD_TOKEN = "s3AiPMGyj8DjIoVteKhU";

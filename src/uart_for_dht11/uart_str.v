@@ -24,13 +24,6 @@ module uart_string(
   // humidifer & cooling fan states
   input wire fan_state,
   input wire hum_state,
-
-  // Threshold values for temperature and humidity.
-  // These settings retrieved from Thingsboard MQTT via ESP8266 (UART)
-  // output reg [6:0] max_temp,
-  // output reg [6:0] min_temp,
-  // output reg [6:0] max_hum,
-  // output reg [6:0] min_hum,
   
   // RX String message
   // Format: [char_command][char_value1][char_value2] 
@@ -120,6 +113,7 @@ module uart_string(
           end
         end
         LOAD: begin
+          // only load the temperature and humidity values one at a time, to save performance & power
           if (tx_index == 0) begin
             tx_msg[2] <= temperature / 10 + 8'h30;
             tx_msg[3] <= temperature % 10 + 8'h30;
@@ -156,14 +150,11 @@ module uart_string(
   /*
   Rx Handler
   Retrieve the ASCII characters from the UART module and control the LEDs based on the received values
-  Format: L[ascii_led_1]:[ascii_led_2]\n
-  E.g.: L1:0\n (LED 1 ON, LED 2 OFF)
+  Format: [command][value_1]:[value_2]\n (':' is the delimiter, '\n' is the newline character to identify the end of the message)
+  E.g.: L1:0\n (LED 1 ON, LED 2 OFF), A2:5\n (Max Temp: 25 celcius), C5:0\n (Max Humidity: 50%)
   Because we are working on 2 different clock domains, the delimiter (:) is necessary to indentify correct state in SFM synchronization
   */
   wire [7:0] rx_data;
-  // reg led_fan_reg, led_hum_reg;
-  // assign led_fan = led_fan_reg;
-  // assign led_hum = led_hum_reg;
   wire rx_busy;
   reg [5:0] RX_STATE;
   //reg [7:0] chr_cmd, chr_val0, chr_val1;
